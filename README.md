@@ -90,11 +90,11 @@ FlexSpotBridge provides a GUI for monitoring (log output), settings, and clearin
 
 ### Main Window
 
-<img src="main-window.png" alt="FlexSpotBridge main window" width="356">
+<img src="main-window.png" alt="FlexSpotBridge main window" width="534">
 
 ### Preferences
 
-<img src="preferences.png" alt="FlexSpotBridge preferences" width="343">
+<img src="preferences.png" alt="FlexSpotBridge preferences" width="514">
 
 ## License
 MIT License
