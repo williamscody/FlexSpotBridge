@@ -88,13 +88,3 @@ FlexSpotBridge provides a GUI for monitoring (log output), settings, and clearin
 
 ## License
 MIT License
-
-## Versioning
-FlexSpotBridge uses Semantic Versioning with standard prerelease tags:
-
-- Beta builds: `1.1.0-beta.1`, `1.1.0-beta.2`, `1.1.0-beta.3`, ...
-- Current beta: `1.1.0-beta.2`
-- Release candidates: `1.1.0-rc.1`, `1.1.0-rc.2`, ...
-- Stable release: `1.1.0`
-
-For each new stable line, increment the version and repeat as needed (for example `1.1.0-beta.1`).
