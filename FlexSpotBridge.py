@@ -126,9 +126,10 @@ def next_flex_command_seq():
 
 def send_flex_command(command):
     """Send a one-shot command to the Flex API."""
+    command_seq = next_flex_command_seq()
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.connect((FLEX_IP, FLEX_PORT))
-    sock.sendall(f"C1|{command}\n".encode())
+    sock.sendall(f"C{command_seq}|{command}\n".encode())
     sock.close()
 
 
@@ -361,26 +362,34 @@ def clear_old_spots_task():
         
         current_time = int(time.time())
         age_threshold_seconds = AUTO_CLEAR_SPOTS_AGE_MINUTES * 60
+        clear_all_tracked_spots = False
         
         with flex_spots_lock:
+            total_spot_count = len(flex_spots)
             spots_to_remove = [
                 spot_id
                 for spot_id, spot in flex_spots.items()
                 if (current_time - spot.get("time", current_time)) > age_threshold_seconds
             ]
-            
-            for spot_id in spots_to_remove:
-                flex_spots.pop(spot_id, None)
+            clear_all_tracked_spots = (
+                total_spot_count > 0 and len(spots_to_remove) == total_spot_count
+            )
+
+            if clear_all_tracked_spots:
+                flex_spots.clear()
+            else:
+                for spot_id in spots_to_remove:
+                    flex_spots.pop(spot_id, None)
         
         if spots_to_remove:
             try:
-                for spot_id in spots_to_remove:
+                if clear_all_tracked_spots:
                     if command_sock is None:
                         command_sock = connect_flex_command_socket()
 
                     try:
                         command_seq += 1
-                        command_sock.sendall(f"C{command_seq}|spot remove {spot_id}\n".encode())
+                        command_sock.sendall(f"C{command_seq}|spot clear\n".encode())
                     except Exception:
                         try:
                             command_sock.close()
@@ -389,7 +398,24 @@ def clear_old_spots_task():
 
                         command_sock = connect_flex_command_socket()
                         command_seq += 1
-                        command_sock.sendall(f"C{command_seq}|spot remove {spot_id}\n".encode())
+                        command_sock.sendall(f"C{command_seq}|spot clear\n".encode())
+                else:
+                    for spot_id in spots_to_remove:
+                        if command_sock is None:
+                            command_sock = connect_flex_command_socket()
+
+                        try:
+                            command_seq += 1
+                            command_sock.sendall(f"C{command_seq}|spot remove {spot_id}\n".encode())
+                        except Exception:
+                            try:
+                                command_sock.close()
+                            except Exception:
+                                pass
+
+                            command_sock = connect_flex_command_socket()
+                            command_seq += 1
+                            command_sock.sendall(f"C{command_seq}|spot remove {spot_id}\n".encode())
 
                 log_debug(f"Auto-cleared {len(spots_to_remove)} old spots")
             except Exception as e:
