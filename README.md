@@ -86,5 +86,15 @@ FlexSpotBridge provides a GUI for monitoring (log output), settings, and clearin
 - All log output appears in the main window.
 - Note that MacLoggerDX will be in focus momentarily when a spot populates the call field.  Focus will quickly resume to the prior app after the spot is entered into MLDX.
 
+## Screenshots
+
+### Main Window
+
+![FlexSpotBridge main window](main-window.png)
+
+### Preferences
+
+![FlexSpotBridge preferences](preferences.png)
+
 ## License
 MIT License
