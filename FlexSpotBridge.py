@@ -145,6 +145,11 @@ def log_debug(*args, **kwargs):
         print(*args, **kwargs)
 
 
+def log_mutation_trace(message):
+    """Always print mutation guard events, even when verbose logging is disabled."""
+    print(f"MutationGuard: {message}")
+
+
 def remove_duplicate_flex_spots(freq_hz, keep_spot_id, command_sock=None):
     """Remove older Flex spots within DUPLICATE_SPOT_THRESHOLD_HZ, keeping one ID."""
     now = int(time.time())
@@ -646,48 +651,93 @@ def flex_listener():
 
                 # MLDX lookup actions can emit synthetic "Lookup" spots that are
                 # later reused/updated, which appears as cross-frequency call
-                # mutation in SmartSDR. Remove these echo spots immediately.
-                if (
-                    not FORCE_APPLESCRIPT_LOOKUP_ONLY
-                    and source_value.lower() == "mldx"
-                    and spotter_value.lower() == "lookup"
-                ):
+                # mutation in SmartSDR. Remove these echo spots immediately,
+                # except when the spot was just matched to avoid click->vanish.
+                if source_value.lower() == "mldx" and spotter_value.lower() == "lookup":
+                    now = int(time.time())
+                    recently_matched = False
+                    recently_matched_call = None
+                    recently_matched_freq_hz = None
                     with flex_spots_lock:
-                        flex_spots.pop(spot_id, None)
+                        existing_lookup_spot = flex_spots.get(spot_id)
+                        if existing_lookup_spot is not None:
+                            recently_matched = (
+                                now - int(existing_lookup_spot.get("last_matched_time", 0))
+                            ) <= RECENT_MATCH_PROTECTION_SECONDS
+                            recently_matched_call = existing_lookup_spot.get("call")
+                            recently_matched_freq_hz = existing_lookup_spot.get("freq_hz")
+
+                        if recently_matched:
+                            log_mutation_trace(
+                                "Lookup echo observed for recently matched spot; keeping it "
+                                f"id={spot_id} call={recently_matched_call} freq={recently_matched_freq_hz}"
+                            )
+                        else:
+                            flex_spots.pop(spot_id, None)
+
+                    if recently_matched:
+                        continue
 
                     try:
                         command_seq = next_flex_command_seq()
                         sock.sendall(f"C{command_seq}|spot remove {spot_id}\n".encode())
-                        log_debug(f"Removed synthetic MLDX Lookup spot id={spot_id}")
+                        log_mutation_trace(
+                            "Removed synthetic MLDX Lookup spot "
+                            f"id={spot_id} call={call or 'unknown'}"
+                        )
                     except Exception as e:
-                        log_debug(f"Failed to remove synthetic Lookup spot id={spot_id}: {e}")
+                        log_mutation_trace(
+                            f"Failed removing synthetic MLDX Lookup spot id={spot_id}: {e}"
+                        )
                     continue
 
                 if not freq_value or not call:
                     continue
 
                 spot_freq_hz = int(round(float(freq_value) * 1e6))
-                spot_time = int(timestamp_value) if timestamp_value else int(time.time())
+                has_timestamp = bool(timestamp_value)
+                parsed_spot_time = int(timestamp_value) if has_timestamp else None
 
                 with flex_spots_lock:
                     existing_spot = flex_spots.get(spot_id)
+                    existing_time = 0
                     if existing_spot:
                         existing_time = int(existing_spot.get("time", 0))
                         existing_freq_hz = existing_spot.get("freq_hz")
                         existing_call = existing_spot.get("call")
 
+                        # Ignore any callsign/frequency mutation when no timestamp is
+                        # present; these are frequently transient ID-reuse updates.
+                        if (
+                            (existing_freq_hz != spot_freq_hz or existing_call != call)
+                            and not has_timestamp
+                        ):
+                            log_mutation_trace(
+                                "Ignored mutation without timestamp "
+                                f"id={spot_id} old=({existing_call}, {existing_freq_hz}, t={existing_time}) "
+                                f"new=({call}, {spot_freq_hz}, t=missing) "
+                                f"source={source_value or 'unknown'} spotter={spotter_value or 'unknown'}"
+                            )
+                            continue
+
                         # Flex may briefly reuse a spot ID with stale data. Ignore
                         # callsign/frequency mutations unless the timestamp advances.
                         if (
                             (existing_freq_hz != spot_freq_hz or existing_call != call)
-                            and spot_time <= existing_time
+                            and has_timestamp
+                            and parsed_spot_time <= existing_time
                         ):
-                            log_debug(
-                                "Ignoring stale spot mutation "
+                            log_mutation_trace(
+                                "Ignored stale mutation "
                                 f"id={spot_id} old=({existing_call}, {existing_freq_hz}, t={existing_time}) "
-                                f"new=({call}, {spot_freq_hz}, t={spot_time})"
+                                f"new=({call}, {spot_freq_hz}, t={parsed_spot_time}) "
+                                f"source={source_value or 'unknown'} spotter={spotter_value or 'unknown'}"
                             )
                             continue
+
+                    spot_time = parsed_spot_time if has_timestamp else (
+                        existing_time if existing_spot else int(time.time())
+                    )
 
                     flex_spots[spot_id] = {
                         "freq_hz": spot_freq_hz,
