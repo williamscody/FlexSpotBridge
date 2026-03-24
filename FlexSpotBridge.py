@@ -34,7 +34,7 @@ import glob
 
 APP_NAME = "FlexSpotBridge"
 APP_VERSION = "1.1.0"
-APP_PRERELEASE = "beta.2"
+APP_PRERELEASE = "beta.3"
 
 
 def app_version_label():
@@ -1092,10 +1092,12 @@ class App:
         entries = {}
         row = 0
         for label, var_name in settings:
-            tk.Label(settings_win, text=f"{label}:").grid(row=row, column=0, sticky="e")
-            entry = tk.Entry(settings_win)
+            field_frame = tk.Frame(settings_win)
+            field_frame.grid(row=row, column=0, columnspan=2, pady=(4, 4))
+            tk.Label(field_frame, text=f"{label}:").pack(side=tk.LEFT)
+            entry = tk.Entry(field_frame, width=20)
             entry.insert(0, str(globals()[var_name]))
-            entry.grid(row=row, column=1)
+            entry.pack(side=tk.LEFT, padx=(6, 0))
             entries[var_name] = entry
             row += 1
 
