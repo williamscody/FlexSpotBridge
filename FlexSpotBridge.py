@@ -325,6 +325,11 @@ def spot_background_color_for_age(age_seconds):
     return SPOT_BG_COLOR_NOW
 
 
+def spot_seen_time(spot, fallback_now):
+    """Return local first-seen time used for color/auto-clear aging."""
+    return int(spot.get("seen_time", spot.get("time", fallback_now)))
+
+
 def parse_slice_filter_bandwidth_hz(slice_line):
     """Extract a filter bandwidth in Hz from a Flex slice status line."""
     width_keys = ("filter_bw", "filter_width", "filter_bandwidth")
@@ -374,7 +379,7 @@ def clear_old_spots_task():
             spots_to_remove = [
                 spot_id
                 for spot_id, spot in flex_spots.items()
-                if (current_time - spot.get("time", current_time)) > age_threshold_seconds
+                if (current_time - spot_seen_time(spot, current_time)) > age_threshold_seconds
             ]
             clear_all_tracked_spots = (
                 total_spot_count > 0 and len(spots_to_remove) == total_spot_count
@@ -448,7 +453,7 @@ def update_spot_colors_task():
         updates = []
         with flex_spots_lock:
             for spot_id, spot in flex_spots.items():
-                spot_age_seconds = max(0, now - int(spot.get("time", now)))
+                spot_age_seconds = max(0, now - spot_seen_time(spot, now))
                 target_text_color = spot_color_for_age(spot_age_seconds)
                 target_background_color = spot_background_color_for_age(spot_age_seconds)
                 if (
@@ -695,14 +700,17 @@ def flex_listener():
                     continue
 
                 spot_freq_hz = int(round(float(freq_value) * 1e6))
+                event_now = int(time.time())
                 has_timestamp = bool(timestamp_value)
                 parsed_spot_time = int(timestamp_value) if has_timestamp else None
 
                 with flex_spots_lock:
                     existing_spot = flex_spots.get(spot_id)
-                    existing_time = 0
+                    existing_source_time = 0
                     if existing_spot:
-                        existing_time = int(existing_spot.get("time", 0))
+                        existing_source_time = int(
+                            existing_spot.get("source_time", existing_spot.get("time", 0))
+                        )
                         existing_freq_hz = existing_spot.get("freq_hz")
                         existing_call = existing_spot.get("call")
 
@@ -714,7 +722,7 @@ def flex_listener():
                         ):
                             log_mutation_trace(
                                 "Ignored mutation without timestamp "
-                                f"id={spot_id} old=({existing_call}, {existing_freq_hz}, t={existing_time}) "
+                                f"id={spot_id} old=({existing_call}, {existing_freq_hz}, t={existing_source_time}) "
                                 f"new=({call}, {spot_freq_hz}, t=missing) "
                                 f"source={source_value or 'unknown'} spotter={spotter_value or 'unknown'}"
                             )
@@ -725,24 +733,32 @@ def flex_listener():
                         if (
                             (existing_freq_hz != spot_freq_hz or existing_call != call)
                             and has_timestamp
-                            and parsed_spot_time <= existing_time
+                            and parsed_spot_time <= existing_source_time
                         ):
                             log_mutation_trace(
                                 "Ignored stale mutation "
-                                f"id={spot_id} old=({existing_call}, {existing_freq_hz}, t={existing_time}) "
+                                f"id={spot_id} old=({existing_call}, {existing_freq_hz}, t={existing_source_time}) "
                                 f"new=({call}, {spot_freq_hz}, t={parsed_spot_time}) "
                                 f"source={source_value or 'unknown'} spotter={spotter_value or 'unknown'}"
                             )
                             continue
 
-                    spot_time = parsed_spot_time if has_timestamp else (
-                        existing_time if existing_spot else int(time.time())
+                    mutation_accepted = bool(
+                        existing_spot
+                        and (existing_spot.get("freq_hz") != spot_freq_hz or existing_spot.get("call") != call)
                     )
+
+                    source_time = parsed_spot_time if has_timestamp else existing_source_time
+                    seen_time = event_now
+                    if existing_spot and not mutation_accepted:
+                        seen_time = int(existing_spot.get("seen_time", existing_spot.get("time", event_now)))
 
                     flex_spots[spot_id] = {
                         "freq_hz": spot_freq_hz,
                         "call": call,
-                        "time": spot_time,
+                        "time": seen_time,
+                        "seen_time": seen_time,
+                        "source_time": source_time,
                         "last_text_color": existing_spot.get("last_text_color") if existing_spot else None,
                         "last_background_color": existing_spot.get("last_background_color") if existing_spot else None,
                         "last_text_enabled": existing_spot.get("last_text_enabled") if existing_spot else None,
