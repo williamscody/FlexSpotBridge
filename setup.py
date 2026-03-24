@@ -14,7 +14,7 @@ OPTIONS = {
         'CFBundleIdentifier': 'com.yourdomain.FlexSpotBridge',
         'CFBundleShortVersionString': '1.1.0',
         'CFBundleVersion': '1',
-        'CFBundleGetInfoString': 'FlexSpotBridge 1.1.0-beta.1',
+        'CFBundleGetInfoString': 'FlexSpotBridge 1.1.0-beta.2',
     },
 }
 

@@ -34,7 +34,7 @@ import glob
 
 APP_NAME = "FlexSpotBridge"
 APP_VERSION = "1.1.0"
-APP_PRERELEASE = "beta.1"
+APP_PRERELEASE = "beta.2"
 
 
 def app_version_label():
