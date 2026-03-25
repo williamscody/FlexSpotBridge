@@ -1,4 +1,4 @@
-# FlexSpotBridge
+# FlexSpotBridge - Mac SmartSDR->MacLoggerDX
 
 Current release: **1.1.0-beta.3**
 
@@ -8,6 +8,8 @@ The Windows version of SmartSDR has a feature missing from Mac SmartSDR.  When c
 With this app, you can click on any spot that appears in your panadapter and tune your radio to that spot. FlexSpotBridge listens directly to the Flex spot stream, watches for VFO frequency changes, and matches only exact spot frequencies. When there is an exact match, the callsign is forwarded to MacLoggerDX and fills in the Call field.
 
 FlexSpotBridge provides a GUI for monitoring (log output), settings, and clearing panadapter spots.
+
+A ready-to-launch macOS version is available in the Releases section at: https://github.com/williamscody/FlexSpotBridge/releases
 
 ## Features
 - Monitors FlexRadio spot and slice updates in real time
@@ -54,7 +56,22 @@ FlexSpotBridge provides a GUI for monitoring (log output), settings, and clearin
 - Keep **Remove older spots at same frequency** enabled so stale duplicates are automatically cleaned up.  Duplicate threshold should be 50-100Hz depending on CW traffic density.
 - Optionally enable **Auto-clear spots older than:** and set to 5-10 minutes to keep the panadapter clean of old spots.
 
-## Build Instructions
+## Usage
+- Launch Mac SmartSDR
+- Launch MacLoggerDX
+- Ensure spots are being sent to your Flex panadapter from your preferred source.
+- Launch FlexSpotBridge
+- Use the **Preferences...** menu (⌘,) to enter your settings.
+- In **Preferences...**, enable **Keep current mode** if you want to stay in your current mode (for example, to avoid switching out of CW).
+- In **Preferences...**, enable **Remove older spots at same frequency** and set **Duplicate threshold** (Hz) to control how tightly nearby spots are considered duplicates.
+- In **Preferences...**, optionally enable **Auto-clear spots older than:** and adjust the age threshold to automatically remove stale spots. A typical setting is 5-10 minutes.
+- In **Preferences...**, use **Spot Age Colors** to configure age buckets and colors for spot text/background.
+- Use background **None** buttons if you want no background color for a bucket.
+- Use **Clear All Spots** (⌘L) to clear all spots from the panadapter.  FlexSpotBridge will only recognize spots that appear AFTER the program is launched.
+- All log output appears in the main window.
+- Note that MacLoggerDX will be in focus momentarily when a spot populates the call field.  Focus will quickly resume to the prior app after the spot is entered into MLDX.
+
+## Optional Build Instructions 
 1. Ensure you have Python 3.9+ and `py2app` installed:
    ```sh
    pip install py2app
@@ -70,21 +87,6 @@ FlexSpotBridge provides a GUI for monitoring (log output), settings, and clearin
    codesign --force --deep --sign - dist/FlexSpotBridge.app
    ```
 6. Double-click the app to launch.
-
-## Usage
-- Launch Mac SmartSDR
-- Launch MacLoggerDX
-- Ensure spots are being sent to your Flex panadapter from your preferred source.
-- Launch FlexSpotBridge
-- Use the **Preferences...** menu (⌘,) to enter your settings.
-- In **Preferences...**, enable **Keep current mode** if you want to stay in your current mode (for example, to avoid switching out of CW).
-- In **Preferences...**, enable **Remove older spots at same frequency** and set **Duplicate threshold** (Hz) to control how tightly nearby spots are considered duplicates.
-- In **Preferences...**, optionally enable **Auto-clear spots older than:** and adjust the age threshold to automatically remove stale spots. A typical setting is 5-10 minutes.
-- In **Preferences...**, use **Spot Age Colors** to configure age buckets and colors for spot text/background.
-- Use background **None** buttons if you want no background color for a bucket.
-- Use **Clear All Spots** (⌘L) to clear all spots from the panadapter.  FlexSpotBridge will only recognize spots that appear AFTER the program is launched.
-- All log output appears in the main window.
-- Note that MacLoggerDX will be in focus momentarily when a spot populates the call field.  Focus will quickly resume to the prior app after the spot is entered into MLDX.
 
 ## Screenshots
 
