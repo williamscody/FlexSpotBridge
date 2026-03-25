@@ -1,4 +1,5 @@
-# FlexSpotBridge - Mac SmartSDR->MacLoggerDX
+# FlexSpotBridge
+## Mac SmartSDR to MacLoggerDX spot bridge
 
 Current release: **1.1.0-beta.3**
 
