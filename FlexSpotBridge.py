@@ -119,6 +119,13 @@ flex_command_seq = 2
 flex_command_seq_lock = threading.Lock()
 
 
+# Callsigns recently sent to MLDX for lookup, used to distinguish synthetic
+# Lookup echo spots from genuine manually-entered MLDX spots.
+_recent_mldx_lookups: dict = {}          # callsign_upper -> unix timestamp
+_recent_mldx_lookups_lock = threading.Lock()
+MLDX_LOOKUP_ECHO_WINDOW_SECONDS = 10    # Echo expected within 10 s of the lookup call
+
+
 def next_flex_command_seq():
     """Return the next command sequence number for the listener socket."""
     global flex_command_seq
@@ -578,6 +585,8 @@ def set_mldx_call(call):
             check=True,
         )
         print("MLDX lookup command sent successfully")
+        with _recent_mldx_lookups_lock:
+            _recent_mldx_lookups[call.upper()] = int(time.time())
     except subprocess.CalledProcessError as e:
         if FORCE_APPLESCRIPT_LOOKUP_ONLY:
             print(f"Direct MLDX lookup failed (AppleScript-only mode): {e}")
@@ -693,45 +702,61 @@ def flex_listener():
 
                 # MLDX lookup actions can emit synthetic "Lookup" spots that are
                 # later reused/updated, which appears as cross-frequency call
-                # mutation in SmartSDR. Remove these echo spots immediately,
-                # except when the spot was just matched to avoid click->vanish.
+                # mutation in SmartSDR. Only remove these echo spots when the
+                # callsign matches one we recently sent to MLDX for lookup;
+                # otherwise this is a manually entered MLDX spot — keep it.
                 if source_value.lower() == "mldx" and spotter_value.lower() == "lookup":
                     now = int(time.time())
-                    recently_matched = False
-                    recently_matched_call = None
-                    recently_matched_freq_hz = None
-                    with flex_spots_lock:
-                        existing_lookup_spot = flex_spots.get(spot_id)
-                        if existing_lookup_spot is not None:
-                            recently_matched = (
-                                now - int(existing_lookup_spot.get("last_matched_time", 0))
-                            ) <= RECENT_MATCH_PROTECTION_SECONDS
-                            recently_matched_call = existing_lookup_spot.get("call")
-                            recently_matched_freq_hz = existing_lookup_spot.get("freq_hz")
 
-                        if recently_matched:
-                            log_mutation_trace(
-                                "Lookup echo observed for recently matched spot; keeping it "
-                                f"id={spot_id} call={recently_matched_call} freq={recently_matched_freq_hz}"
-                            )
-                        else:
-                            flex_spots.pop(spot_id, None)
+                    # Determine whether this Lookup spot is a synthetic echo of
+                    # a lookup we initiated, or a genuine manual MLDX entry.
+                    call_upper = (call or "").upper()
+                    with _recent_mldx_lookups_lock:
+                        lookup_ts = _recent_mldx_lookups.get(call_upper, 0)
+                    is_lookup_echo = (now - lookup_ts) <= MLDX_LOOKUP_ECHO_WINDOW_SECONDS
 
-                    if recently_matched:
-                        continue
-
-                    try:
-                        command_seq = next_flex_command_seq()
-                        sock.sendall(f"C{command_seq}|spot remove {spot_id}\n".encode())
+                    if not is_lookup_echo:
+                        # Manual MLDX spot — fall through to normal spot processing.
                         log_mutation_trace(
-                            "Removed synthetic MLDX Lookup spot "
+                            f"Manual MLDX spot (spotter=Lookup but not a recent echo); keeping "
                             f"id={spot_id} call={call or 'unknown'}"
                         )
-                    except Exception as e:
-                        log_mutation_trace(
-                            f"Failed removing synthetic MLDX Lookup spot id={spot_id}: {e}"
-                        )
-                    continue
+                    else:
+                        recently_matched = False
+                        recently_matched_call = None
+                        recently_matched_freq_hz = None
+                        with flex_spots_lock:
+                            existing_lookup_spot = flex_spots.get(spot_id)
+                            if existing_lookup_spot is not None:
+                                recently_matched = (
+                                    now - int(existing_lookup_spot.get("last_matched_time", 0))
+                                ) <= RECENT_MATCH_PROTECTION_SECONDS
+                                recently_matched_call = existing_lookup_spot.get("call")
+                                recently_matched_freq_hz = existing_lookup_spot.get("freq_hz")
+
+                            if recently_matched:
+                                log_mutation_trace(
+                                    "Lookup echo observed for recently matched spot; keeping it "
+                                    f"id={spot_id} call={recently_matched_call} freq={recently_matched_freq_hz}"
+                                )
+                            else:
+                                flex_spots.pop(spot_id, None)
+
+                        if recently_matched:
+                            continue
+
+                        try:
+                            command_seq = next_flex_command_seq()
+                            sock.sendall(f"C{command_seq}|spot remove {spot_id}\n".encode())
+                            log_mutation_trace(
+                                "Removed synthetic MLDX Lookup spot "
+                                f"id={spot_id} call={call or 'unknown'}"
+                            )
+                        except Exception as e:
+                            log_mutation_trace(
+                                f"Failed removing synthetic MLDX Lookup spot id={spot_id}: {e}"
+                            )
+                        continue
 
                 if not freq_value or not call:
                     continue
