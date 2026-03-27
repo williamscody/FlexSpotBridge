@@ -1,7 +1,7 @@
 # FlexSpotBridge
 ## Mac SmartSDR to MacLoggerDX spot bridge
 
-Current release: **1.1.0-beta.3**
+Current release: **1.1.0-beta.4**
 
 ## Overview
 The Windows version of SmartSDR has a feature missing from Mac SmartSDR.  When clicking on a panadapter spot in the Windows version, that spot information is sent out from the app for use by other applications.  That function is not present in Mac SmartSDR.
@@ -40,6 +40,7 @@ A ready-to-launch macOS version is available in the Releases section at: https:/
 - **FLEX_PORT**: The FlexRadio TCP API port (default: `4992`)
 - **Keep current mode** (checkbox): When enabled, FlexSpotBridge will not change the slice mode when a spot is matched. When disabled, FlexSpotBridge will allow mode change according to band-plan logic.
 - **Remove older spots at same frequency** (checkbox): When enabled, FlexSpotBridge removes older Flex spots that are within the configured duplicate threshold and keeps only the newest one.
+- **Contest mode (ignore newer spots near same frequency)** (checkbox): The opposite of Remove older spots. When enabled, FlexSpotBridge keeps the first/older spot at a runner frequency and ignores newer nearby spots (within threshold). This is useful for contest running where pounce callers cluster around one frequency.
 - **Duplicate threshold** (spinbox): Frequency distance in Hz used to determine whether two spots are duplicates. Default is **25 Hz**. A new spot within this threshold of an existing spot is treated as a duplicate.
 - **Auto-clear spots older than:** (checkbox + spinbox): When enabled, FlexSpotBridge automatically removes spots that are older than the specified number of minutes. Use the spinbox to adjust the age threshold from 1 to 99 minutes. The spinbox supports up/down arrow buttons, keyboard arrow keys, and direct numeric entry.
 - **Verbose debug logging** (checkbox): When enabled, FlexSpotBridge prints detailed Flex processing logs. Leave this disabled for cleaner output and lower UI logging overhead.
@@ -55,6 +56,7 @@ A ready-to-launch macOS version is available in the Releases section at: https:/
 ## Recommended Defaults for CW Operators
 - Enable **Keep current mode** in Preferences so FlexSpotBridge does not switch out of CW on a matched spot; especially handy for contests.
 - Keep **Remove older spots at same frequency** enabled so stale duplicates are automatically cleaned up.  Duplicate threshold should be 50-100Hz depending on CW traffic density.
+- For runner-style contest operating, enable **Contest mode (ignore newer spots near same frequency)** so newer pounce spots near your run frequency are ignored and the original runner-frequency spot remains.
 - Optionally enable **Auto-clear spots older than:** and set to 5-10 minutes to keep the panadapter clean of old spots.
 
 ## Usage
@@ -65,6 +67,7 @@ A ready-to-launch macOS version is available in the Releases section at: https:/
 - Use the **Preferences...** menu (⌘,) to enter your settings.
 - In **Preferences...**, enable **Keep current mode** if you want to stay in your current mode (for example, to avoid switching out of CW).
 - In **Preferences...**, enable **Remove older spots at same frequency** and set **Duplicate threshold** (Hz) to control how tightly nearby spots are considered duplicates.
+- In **Preferences...**, enable **Contest mode (ignore newer spots near same frequency)** when you want the opposite duplicate behavior (keep older spots, ignore newer nearby spots).
 - In **Preferences...**, optionally enable **Auto-clear spots older than:** and adjust the age threshold to automatically remove stale spots. A typical setting is 5-10 minutes.
 - In **Preferences...**, use **Spot Age Colors** to configure age buckets and colors for spot text/background.
 - Use background **None** buttons if you want no background color for a bucket.

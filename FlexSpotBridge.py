@@ -34,7 +34,7 @@ import glob
 
 APP_NAME = "FlexSpotBridge"
 APP_VERSION = "1.1.0"
-APP_PRERELEASE = "beta.3"
+APP_PRERELEASE = "beta.4"
 
 
 def app_version_label():
@@ -59,6 +59,9 @@ KEEP_CURRENT_MODE = False
 
 # If True, remove older Flex spots that share the same exact frequency.
 REMOVE_DUPLICATE_SPOTS = True
+
+# If True, keep older nearby spots and ignore newer ones within duplicate threshold.
+CONTEST_MODE = False
 
 # Any new spot within this many Hz of an older spot is treated as a duplicate.
 DUPLICATE_SPOT_THRESHOLD_HZ = 25
@@ -182,6 +185,35 @@ def remove_duplicate_flex_spots(freq_hz, keep_spot_id, command_sock=None):
             print(f"Failed to remove Flex spot id={spot_id}: {e}")
 
 
+def remove_newer_duplicate_spot(freq_hz, new_spot_id, command_sock=None):
+    """Remove the newly arrived spot when an older nearby spot already exists."""
+    with flex_spots_lock:
+        has_older_duplicate = any(
+            spot_id != new_spot_id
+            and spot.get("freq_hz") is not None
+            and abs(int(spot.get("freq_hz")) - int(freq_hz)) <= DUPLICATE_SPOT_THRESHOLD_HZ
+            for spot_id, spot in flex_spots.items()
+        )
+
+    if not has_older_duplicate:
+        return False
+
+    try:
+        if command_sock is None:
+            send_flex_command(f"spot remove {new_spot_id}")
+        else:
+            command_seq = next_flex_command_seq()
+            command_sock.sendall(f"C{command_seq}|spot remove {new_spot_id}\n".encode())
+        print(
+            f"Contest mode: ignored newer Flex spot id={new_spot_id} near {freq_hz} Hz "
+            f"(threshold {DUPLICATE_SPOT_THRESHOLD_HZ} Hz)"
+        )
+        return True
+    except Exception as e:
+        print(f"Failed to remove newer Flex spot id={new_spot_id}: {e}")
+        return False
+
+
 def find_exact_flex_spot_call(freq_hz):
     """Return the newest callsign for an exact Flex spot frequency match."""
     with flex_spots_lock:
@@ -212,7 +244,7 @@ def find_exact_flex_spot_call(freq_hz):
 SETTINGS_FILE = os.path.expanduser("~/Library/Preferences/FlexSpotBridge.json")
 
 def load_settings():
-    global FLEX_IP, FLEX_PORT, KEEP_CURRENT_MODE, REMOVE_DUPLICATE_SPOTS, DUPLICATE_SPOT_THRESHOLD_HZ, VERBOSE_LOGGING, AUTO_CLEAR_SPOTS_ENABLED, AUTO_CLEAR_SPOTS_AGE_MINUTES
+    global FLEX_IP, FLEX_PORT, KEEP_CURRENT_MODE, REMOVE_DUPLICATE_SPOTS, CONTEST_MODE, DUPLICATE_SPOT_THRESHOLD_HZ, VERBOSE_LOGGING, AUTO_CLEAR_SPOTS_ENABLED, AUTO_CLEAR_SPOTS_AGE_MINUTES
     global SPOT_AGE_RED_MINUTES, SPOT_AGE_YELLOW_MINUTES, SPOT_COLOR_NOW, SPOT_COLOR_RED, SPOT_COLOR_YELLOW
     global SPOT_BG_COLOR_NOW, SPOT_BG_COLOR_RED, SPOT_BG_COLOR_YELLOW
     global ENABLE_SPOT_TEXT_COLORS, ENABLE_SPOT_BACKGROUND_COLORS, ENABLE_AUTO_DUPE_THRESHOLD, FORCE_APPLESCRIPT_LOOKUP_ONLY
@@ -224,6 +256,7 @@ def load_settings():
             FLEX_PORT = int(data.get("FLEX_PORT", FLEX_PORT))
             KEEP_CURRENT_MODE = bool(data.get("KEEP_CURRENT_MODE", KEEP_CURRENT_MODE))
             REMOVE_DUPLICATE_SPOTS = bool(data.get("REMOVE_DUPLICATE_SPOTS", REMOVE_DUPLICATE_SPOTS))
+            CONTEST_MODE = bool(data.get("CONTEST_MODE", CONTEST_MODE))
             DUPLICATE_SPOT_THRESHOLD_HZ = int(data.get("DUPLICATE_SPOT_THRESHOLD_HZ", DUPLICATE_SPOT_THRESHOLD_HZ))
             VERBOSE_LOGGING = bool(data.get("VERBOSE_LOGGING", VERBOSE_LOGGING))
             AUTO_CLEAR_SPOTS_ENABLED = bool(data.get("AUTO_CLEAR_SPOTS_ENABLED", AUTO_CLEAR_SPOTS_ENABLED))
@@ -266,6 +299,9 @@ def load_settings():
                 data.get("FORCE_APPLESCRIPT_LOOKUP_ONLY", FORCE_APPLESCRIPT_LOOKUP_ONLY)
             )
 
+            if CONTEST_MODE and REMOVE_DUPLICATE_SPOTS:
+                REMOVE_DUPLICATE_SPOTS = False
+
             if SPOT_AGE_RED_MINUTES < 1:
                 SPOT_AGE_RED_MINUTES = 1
             if SPOT_AGE_YELLOW_MINUTES <= SPOT_AGE_RED_MINUTES:
@@ -282,6 +318,7 @@ def save_settings():
             "FLEX_PORT": FLEX_PORT,
             "KEEP_CURRENT_MODE": KEEP_CURRENT_MODE,
             "REMOVE_DUPLICATE_SPOTS": REMOVE_DUPLICATE_SPOTS,
+            "CONTEST_MODE": CONTEST_MODE,
             "DUPLICATE_SPOT_THRESHOLD_HZ": DUPLICATE_SPOT_THRESHOLD_HZ,
             "VERBOSE_LOGGING": VERBOSE_LOGGING,
             "AUTO_CLEAR_SPOTS_ENABLED": AUTO_CLEAR_SPOTS_ENABLED,
@@ -704,6 +741,12 @@ def flex_listener():
                 has_timestamp = bool(timestamp_value)
                 parsed_spot_time = int(timestamp_value) if has_timestamp else None
 
+                if CONTEST_MODE:
+                    with flex_spots_lock:
+                        existing_spot = flex_spots.get(spot_id)
+                    if existing_spot is None and remove_newer_duplicate_spot(spot_freq_hz, spot_id, command_sock=sock):
+                        continue
+
                 with flex_spots_lock:
                     existing_spot = flex_spots.get(spot_id)
                     existing_source_time = 0
@@ -766,7 +809,7 @@ def flex_listener():
                         "last_matched_time": existing_spot.get("last_matched_time", 0) if existing_spot else 0,
                     }
 
-                if REMOVE_DUPLICATE_SPOTS:
+                if REMOVE_DUPLICATE_SPOTS and not CONTEST_MODE:
                     remove_duplicate_flex_spots(spot_freq_hz, spot_id, command_sock=sock)
 
             slice_event_match = re.search(r"S[^|]+\|slice\s+(\d+)\b", line)
@@ -838,6 +881,7 @@ class App:
 
         def refresh_status_line():
             auto_dupe_state = "ON" if ENABLE_AUTO_DUPE_THRESHOLD else "OFF"
+            contest_mode_state = "ON" if CONTEST_MODE else "OFF"
             filter_bw_text = (
                 f"{CURRENT_FILTER_BANDWIDTH_HZ} Hz"
                 if CURRENT_FILTER_BANDWIDTH_HZ is not None
@@ -845,7 +889,8 @@ class App:
             )
             threshold_text = f"{DUPLICATE_SPOT_THRESHOLD_HZ} Hz"
             self.status_var.set(
-                f"Auto-Dupe: {auto_dupe_state} | Filter BW: {filter_bw_text} | Duplicate threshold: {threshold_text}"
+                f"Contest mode: {contest_mode_state} | Auto-Dupe: {auto_dupe_state} | "
+                f"Filter BW: {filter_bw_text} | Duplicate threshold: {threshold_text}"
             )
             if ENABLE_AUTO_DUPE_THRESHOLD:
                 self.status_bar.configure(fg="#0B6E4F")
@@ -1109,12 +1154,48 @@ class App:
         ).grid(row=row, column=0, columnspan=2, sticky="w", padx=8, pady=(6, 8))
         row += 1
 
-        remove_duplicate_spots_var = tk.BooleanVar(value=REMOVE_DUPLICATE_SPOTS)
-        tk.Checkbutton(
-            settings_win,
+        duplicate_mode_frame = tk.Frame(settings_win, bg="SystemControlBackgroundColor")
+        duplicate_mode_frame.grid(row=row, column=0, columnspan=2, sticky="w", padx=8, pady=(0, 8))
+
+        if CONTEST_MODE:
+            initial_duplicate_mode = "contest"
+        elif REMOVE_DUPLICATE_SPOTS:
+            initial_duplicate_mode = "remove_older"
+        else:
+            initial_duplicate_mode = "off"
+
+        duplicate_mode_var = tk.StringVar(value=initial_duplicate_mode)
+
+        tk.Label(
+            duplicate_mode_frame,
+            text="Duplicate handling mode:",
+            bg="SystemControlBackgroundColor"
+        ).pack(anchor="w")
+
+        tk.Radiobutton(
+            duplicate_mode_frame,
+            text="Off (keep all spots)",
+            variable=duplicate_mode_var,
+            value="off",
+            bg="SystemControlBackgroundColor"
+        ).pack(anchor="w", padx=(16, 0))
+
+        tk.Radiobutton(
+            duplicate_mode_frame,
             text="Remove older spots at same frequency",
-            variable=remove_duplicate_spots_var
-        ).grid(row=row, column=0, columnspan=2, sticky="w", padx=8, pady=(0, 8))
+            variable=duplicate_mode_var,
+            value="remove_older",
+            bg="SystemControlBackgroundColor"
+        ).pack(anchor="w", padx=(16, 0))
+
+        tk.Radiobutton(
+            duplicate_mode_frame,
+            text="Contest mode (ignore newer spots near same frequency)",
+            variable=duplicate_mode_var,
+            value="contest",
+            bg="SystemControlBackgroundColor"
+        ).pack(anchor="w", padx=(16, 0))
+
         row += 1
 
         duplicate_threshold_var = tk.IntVar(value=DUPLICATE_SPOT_THRESHOLD_HZ)
@@ -1342,7 +1423,7 @@ class App:
         row += 1
 
         def save():
-            global KEEP_CURRENT_MODE, REMOVE_DUPLICATE_SPOTS, DUPLICATE_SPOT_THRESHOLD_HZ, VERBOSE_LOGGING, AUTO_CLEAR_SPOTS_ENABLED, AUTO_CLEAR_SPOTS_AGE_MINUTES
+            global KEEP_CURRENT_MODE, REMOVE_DUPLICATE_SPOTS, CONTEST_MODE, DUPLICATE_SPOT_THRESHOLD_HZ, VERBOSE_LOGGING, AUTO_CLEAR_SPOTS_ENABLED, AUTO_CLEAR_SPOTS_AGE_MINUTES
             global SPOT_AGE_RED_MINUTES, SPOT_AGE_YELLOW_MINUTES, SPOT_COLOR_NOW, SPOT_COLOR_RED, SPOT_COLOR_YELLOW
             global SPOT_BG_COLOR_NOW, SPOT_BG_COLOR_RED, SPOT_BG_COLOR_YELLOW
             global ENABLE_SPOT_TEXT_COLORS, ENABLE_SPOT_BACKGROUND_COLORS, ENABLE_AUTO_DUPE_THRESHOLD, FORCE_APPLESCRIPT_LOOKUP_ONLY
@@ -1374,7 +1455,9 @@ class App:
                 return
 
             KEEP_CURRENT_MODE = keep_current_mode_var.get()
-            REMOVE_DUPLICATE_SPOTS = remove_duplicate_spots_var.get()
+            selected_duplicate_mode = duplicate_mode_var.get()
+            REMOVE_DUPLICATE_SPOTS = selected_duplicate_mode == "remove_older"
+            CONTEST_MODE = selected_duplicate_mode == "contest"
             ENABLE_AUTO_DUPE_THRESHOLD = enable_auto_dupe_threshold_var.get()
             if not ENABLE_AUTO_DUPE_THRESHOLD:
                 DUPLICATE_SPOT_THRESHOLD_HZ = duplicate_threshold_hz
