@@ -68,14 +68,8 @@ jobs:
       - name: Package app bundle
         run: |
           APP_ZIP="dist/FlexSpotBridge-macOS-${RELEASE_TAG}.zip"
-          APP_EXE="dist/FlexSpotBridge-macOS-${RELEASE_TAG}-executable"
 
           ditto -c -k --sequesterRsrc --keepParent dist/FlexSpotBridge.app "$APP_ZIP"
-          shasum -a 256 "$APP_ZIP" > "$APP_ZIP.sha256"
-
-          cp dist/FlexSpotBridge.app/Contents/MacOS/FlexSpotBridge "$APP_EXE"
-          chmod +x "$APP_EXE"
-          shasum -a 256 "$APP_EXE" > "$APP_EXE.sha256"
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
@@ -85,6 +79,3 @@ jobs:
           generate_release_notes: true
           files: |
             dist/FlexSpotBridge-macOS-${{ env.RELEASE_TAG }}.zip
-            dist/FlexSpotBridge-macOS-${{ env.RELEASE_TAG }}.zip.sha256
-            dist/FlexSpotBridge-macOS-${{ env.RELEASE_TAG }}-executable
-            dist/FlexSpotBridge-macOS-${{ env.RELEASE_TAG }}-executable.sha256
