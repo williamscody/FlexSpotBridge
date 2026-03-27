@@ -6,7 +6,9 @@ Current release: **1.1.0-beta.4**
 ## Overview
 The Windows version of SmartSDR has a feature missing from Mac SmartSDR.  When clicking on a panadapter spot in the Windows version, that spot information is sent out from the app for use by other applications.  That function is not present in Mac SmartSDR.
 
-With this app, you can click on any spot that appears in your panadapter and tune your radio to that spot. FlexSpotBridge listens directly to the Flex spot stream, watches for VFO frequency changes, and matches only exact spot frequencies. When there is an exact match, the callsign is forwarded to MacLoggerDX and fills in the Call field.
+With this app, you can click on any spot that appears in your panadapter and tune your radio to that spot. FlexSpotBridge listens directly to the Flex spot stream, watches for VFO frequency changes, and matches only exact spot frequencies. When there is an exact match, the callsign is forwarded to MacLoggerDX (MLDX) and fills in the Call field.
+
+Slowly tuning your VFO across spots can also trigger a MLDX lookup providing a handy method for seeing who's out there, simply by turning one knob.
 
 FlexSpotBridge provides a GUI for monitoring (log output), settings, and clearing panadapter spots.
 
