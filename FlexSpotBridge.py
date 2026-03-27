@@ -31,16 +31,7 @@ import os
 import webbrowser
 import tempfile
 import glob
-
-APP_NAME = "FlexSpotBridge"
-APP_VERSION = "1.1.1"
-APP_PRERELEASE = ""
-
-
-def app_version_label():
-    if APP_PRERELEASE:
-        return f"{APP_VERSION}-{APP_PRERELEASE}"
-    return APP_VERSION
+from version import APP_NAME, APP_VERSION, APP_PRERELEASE, app_version_label
 
 
 current_freq = None

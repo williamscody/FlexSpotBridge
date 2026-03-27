@@ -14,6 +14,16 @@ FlexSpotBridge provides a GUI for monitoring (log output), settings, and clearin
 
 A ready-to-launch macOS version is available in the Releases section at: https://github.com/williamscody/FlexSpotBridge/releases
 
+## GitHub Release Checklist
+For every new GitHub release tag (`vX.Y.Z`):
+- Update `version.py` (`APP_VERSION` / `APP_PRERELEASE` as needed).
+- Update this README line `Current release: **X.Y.Z**`.
+- Push a version tag in `vX.Y.Z` format.
+
+The release workflow now enforces version consistency between the tag, `version.py`, and README. It also uploads both of these release artifacts automatically:
+- `FlexSpotBridge-macOS-vX.Y.Z.zip` (full `.app` bundle)
+- `FlexSpotBridge-macOS-vX.Y.Z-executable` (built Mach-O executable)
+
 ## Features
 - Monitors FlexRadio spot and slice updates in real time
 - Automatically sends matched callsigns to MacLoggerDX

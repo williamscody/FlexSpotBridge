@@ -1,0 +1,53 @@
+name: Version consistency check
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  verify-version-consistency:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Compare app and README versions
+        run: |
+          APP_VERSION=$(python - <<'PY'
+          from version import app_version_label
+          print(app_version_label())
+          PY
+          )
+
+          README_VERSION=$(python - <<'PY'
+          import re
+
+          with open("README.md", "r", encoding="utf-8") as f:
+              text = f.read()
+
+          m = re.search(r"Current release:\s*\*\*(.+?)\*\*", text)
+          print(m.group(1).strip() if m else "")
+          PY
+          )
+
+          echo "App version:    ${APP_VERSION}"
+          echo "README version: ${README_VERSION}"
+
+          if [ -z "${README_VERSION}" ]; then
+            echo "README.md is missing the 'Current release: **X.Y.Z**' line."
+            exit 1
+          fi
+
+          if [ "${APP_VERSION}" != "${README_VERSION}" ]; then
+            echo "Version mismatch: version.py has '${APP_VERSION}' but README has '${README_VERSION}'."
+            exit 1
+          fi
+
+          echo "Version consistency check passed."

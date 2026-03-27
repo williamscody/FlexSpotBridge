@@ -1,4 +1,5 @@
 from setuptools import setup
+from version import APP_NAME, app_version_label
 
 
 APP = ['FlexSpotBridge.py']
@@ -9,12 +10,12 @@ OPTIONS = {
     'excludes': [],
     'iconfile': 'FlexSpotBridge.icns',
     'plist': {
-        'CFBundleName': 'FlexSpotBridge',
-        'CFBundleDisplayName': 'FlexSpotBridge',
+        'CFBundleName': APP_NAME,
+        'CFBundleDisplayName': APP_NAME,
         'CFBundleIdentifier': 'com.yourdomain.FlexSpotBridge',
-        'CFBundleShortVersionString': '1.1.1',
+        'CFBundleShortVersionString': app_version_label(),
         'CFBundleVersion': '2',
-        'CFBundleGetInfoString': 'FlexSpotBridge 1.1.1',
+        'CFBundleGetInfoString': f'{APP_NAME} {app_version_label()}',
     },
 }
 
