@@ -1,7 +1,7 @@
 # FlexSpotBridge
 ## Mac SmartSDR to MacLoggerDX spot bridge
 
-Current release: **1.1.1**
+Current release: **1.2.0**
 
 ## Overview
 The Windows version of SmartSDR has a feature missing from Mac SmartSDR.  When clicking on a panadapter spot in the Windows version, that spot information is sent out from the app for use by other applications.  That function is not present in Mac SmartSDR.
@@ -58,11 +58,11 @@ The release workflow now enforces version consistency between the tag, `version.
 - **Verbose debug logging** (checkbox): When enabled, FlexSpotBridge prints detailed Flex processing logs. Leave this disabled for cleaner output and lower UI logging overhead.
 - **Enable Auto-Dupe Threshold** (checkbox): When enabled, FlexSpotBridge uses the current Flex slice filter bandwidth (Hz) as the duplicate threshold and updates it automatically as bandwidth changes.
 - **Spot Age Colors** section:
-   - **Text row**: Choose text colors for the three age buckets (**Now**, **Red**, **Yellow**).
-   - **Background row**: Choose background colors for the same three age buckets.
+   - **Text row**: Choose text colors for the four age buckets: **Now**, **Red**, **Yellow**, and **Gray**.
+   - **Background row**: Choose background colors for the same four age buckets.
    - **None buttons** (background row): Set background for a bucket to **None** (Flex command uses `background_color=` with no value).
-   - **Age row**: Configure Red and Yellow age thresholds in minutes (Now remains fixed at 0 minutes).
-   - **Default button**: Resets age thresholds to Red=5 / Yellow=15, text colors to app defaults, and background colors to **None**.
+   - **Age row**: Configure Red, Yellow, and Gray age thresholds in minutes (Now remains fixed at 0 minutes).
+   - **Default button**: Resets auto-clear age to 20 minutes, age thresholds to 5 / 10 / 15 minutes, text colors to the app defaults, and background colors to **None**.
    - **Update spot text color** and **Update spot background color**: Enable either feature independently or both together.
 
 ## Recommended Defaults for CW Operators

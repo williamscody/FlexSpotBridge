@@ -1,5 +1,5 @@
 from setuptools import setup
-from version import APP_NAME, app_version_label
+from version import APP_NAME, APP_VERSION, app_version_label
 
 
 APP = ['FlexSpotBridge.py']
@@ -14,7 +14,7 @@ OPTIONS = {
         'CFBundleDisplayName': APP_NAME,
         'CFBundleIdentifier': 'com.yourdomain.FlexSpotBridge',
         'CFBundleShortVersionString': app_version_label(),
-        'CFBundleVersion': '2',
+        'CFBundleVersion': APP_VERSION,
         'CFBundleGetInfoString': f'{APP_NAME} {app_version_label()}',
     },
 }
