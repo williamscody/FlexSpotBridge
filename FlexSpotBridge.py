@@ -33,12 +33,14 @@ import tempfile
 import glob
 
 APP_NAME = "FlexSpotBridge"
-APP_VERSION = "1.1.0"
-APP_PRERELEASE = "beta.4"
+APP_VERSION = "1.1.1"
+APP_PRERELEASE = ""
 
 
 def app_version_label():
-    return f"{APP_VERSION}-{APP_PRERELEASE}"
+    if APP_PRERELEASE:
+        return f"{APP_VERSION}-{APP_PRERELEASE}"
+    return APP_VERSION
 
 
 current_freq = None
@@ -74,6 +76,10 @@ AUTO_CLEAR_SPOTS_ENABLED = False
 
 # Age in minutes beyond which spots are automatically removed (1-99).
 AUTO_CLEAR_SPOTS_AGE_MINUTES = 5
+
+# Polling cadence for age-driven actions. Lower values track thresholds more closely.
+AUTO_CLEAR_CHECK_INTERVAL_SECONDS = 2
+SPOT_COLOR_UPDATE_INTERVAL_SECONDS = 1
 
 # Spot age-based color thresholds and values.
 # Ages are interpreted as:
@@ -371,7 +377,7 @@ def spot_background_color_for_age(age_seconds):
 
 def spot_seen_time(spot, fallback_now):
     """Return local first-seen time used for color/auto-clear aging."""
-    return int(spot.get("seen_time", spot.get("time", fallback_now)))
+    return float(spot.get("seen_time", spot.get("time", fallback_now)))
 
 
 def parse_slice_filter_bandwidth_hz(slice_line):
@@ -407,14 +413,18 @@ def clear_old_spots_task():
     """Periodically clear spots older than AUTO_CLEAR_SPOTS_AGE_MINUTES."""
     command_sock = None
     command_seq = 9000
+    next_run_monotonic = time.monotonic()
 
     while True:
-        time.sleep(30)  # Check every 30 seconds
+        now_monotonic = time.monotonic()
+        if now_monotonic < next_run_monotonic:
+            time.sleep(next_run_monotonic - now_monotonic)
+        next_run_monotonic = time.monotonic() + AUTO_CLEAR_CHECK_INTERVAL_SECONDS
         
         if not AUTO_CLEAR_SPOTS_ENABLED:
             continue
         
-        current_time = int(time.time())
+        current_time = time.time()
         age_threshold_seconds = AUTO_CLEAR_SPOTS_AGE_MINUTES * 60
         clear_all_tracked_spots = False
         
@@ -423,7 +433,7 @@ def clear_old_spots_task():
             spots_to_remove = [
                 spot_id
                 for spot_id, spot in flex_spots.items()
-                if (current_time - spot_seen_time(spot, current_time)) > age_threshold_seconds
+                if (current_time - spot_seen_time(spot, current_time)) >= age_threshold_seconds
             ]
             clear_all_tracked_spots = (
                 total_spot_count > 0 and len(spots_to_remove) == total_spot_count
@@ -486,14 +496,18 @@ def update_spot_colors_task():
     """Periodically recolor Flex spots based on configurable spot age buckets."""
     command_sock = None
     command_seq = 12000
+    next_run_monotonic = time.monotonic()
 
     while True:
-        time.sleep(10)
+        now_monotonic = time.monotonic()
+        if now_monotonic < next_run_monotonic:
+            time.sleep(next_run_monotonic - now_monotonic)
+        next_run_monotonic = time.monotonic() + SPOT_COLOR_UPDATE_INTERVAL_SECONDS
 
         if not ENABLE_SPOT_TEXT_COLORS and not ENABLE_SPOT_BACKGROUND_COLORS:
             continue
 
-        now = int(time.time())
+        now = time.time()
         updates = []
         with flex_spots_lock:
             for spot_id, spot in flex_spots.items():
