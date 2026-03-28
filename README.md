@@ -1,7 +1,7 @@
 # FlexSpotBridge
 ## Mac SmartSDR to MacLoggerDX spot bridge
 
-Current release: **1.2.0**
+Current release: **1.3.0**
 
 ## Overview
 The Windows version of SmartSDR has a feature missing from Mac SmartSDR.  When clicking on a panadapter spot in the Windows version, that spot information is sent out from the app for use by other applications.  That function is not present in Mac SmartSDR.
@@ -32,6 +32,7 @@ The release workflow now enforces version consistency between the tag, `version.
 - Optional Auto-Dupe Threshold to mirror the current Flex filter bandwidth
 - Optional automatic removal of old spots by age
 - Custom spot colors and backgrounds, configurable based on age
+- **Worked** indicator: spots turn green (configurable) when that callsign has been logged in the current session
 - Clickable color swatches with native macOS color picker integration
 - Independent toggles for updating spot text color and background color
 - GUI window with live log output
@@ -64,6 +65,11 @@ The release workflow now enforces version consistency between the tag, `version.
    - **Age row**: Configure Red, Yellow, and Gray age thresholds in minutes (Now remains fixed at 0 minutes).
    - **Default button**: Resets auto-clear age to 20 minutes, age thresholds to 5 / 10 / 15 minutes, text colors to the app defaults, and background colors to **None**.
    - **Update spot text color** and **Update spot background color**: Enable either feature independently or both together.
+- **Worked** section (below the age color grid):
+   - **Worked** color row: Choose a text color and background color for callsigns you have already logged in the current session. The default text color is green (`#00CC44`).
+   - **None button** (background): Set the Worked background to **None** (no background change).
+   - **Enable Worked color** checkbox: When enabled, any panadapter spot whose callsign appears in your current-session log will be recolored to the Worked colors, overriding the normal age-based color. This state resets when FlexSpotBridge is restarted.
+   - **How it works**: FlexSpotBridge listens for MacLoggerDX UDP log-report broadcasts on port **9932**. When MLDX logs a QSO it broadcasts a `Log Report:Call:CALLSIGN,...` packet; FlexSpotBridge receives this and marks that callsign as worked for the session. The panadapter spot will turn the Worked color within one second of logging. Requires **UDP Broadcast** enabled in MacLoggerDX Station Prefs.
 
 ## Recommended Defaults for CW Operators
 - Enable **Keep current mode** in Preferences so FlexSpotBridge does not switch out of CW on a matched spot; especially handy for contests.
@@ -83,6 +89,7 @@ The release workflow now enforces version consistency between the tag, `version.
 - In **Preferences...**, optionally enable **Auto-clear spots older than:** and adjust the age threshold to automatically remove stale spots. A typical setting is 5-10 minutes.
 - In **Preferences...**, use **Spot Age Colors** to configure age buckets and colors for spot text/background.
 - Use background **None** buttons if you want no background color for a bucket.
+- In **Preferences...**, enable **Enable Worked color** and ensure **UDP Broadcast** is on in MacLoggerDX Station Prefs. After logging a QSO, that callsign's panadapter spot will turn the Worked color (default green) within one second.
 - Use **Clear All Spots** (⌘L) to clear all spots from the panadapter.  FlexSpotBridge will only recognize spots that appear AFTER the program is launched.
 - All log output appears in the main window.
 - Note that MacLoggerDX will be in focus momentarily when a spot populates the call field.  Focus will quickly resume to the prior app after the spot is entered into MLDX.

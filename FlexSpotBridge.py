@@ -102,6 +102,17 @@ SPOT_BG_COLOR_RED = DEFAULT_SPOT_BG_COLOR_RED
 SPOT_BG_COLOR_YELLOW = DEFAULT_SPOT_BG_COLOR_YELLOW
 SPOT_BG_COLOR_GRAY = DEFAULT_SPOT_BG_COLOR_GRAY
 
+DEFAULT_SPOT_COLOR_WORKED = "#00CC44"
+DEFAULT_SPOT_BG_COLOR_WORKED = "none"
+SPOT_COLOR_WORKED = DEFAULT_SPOT_COLOR_WORKED
+SPOT_BG_COLOR_WORKED = DEFAULT_SPOT_BG_COLOR_WORKED
+
+# If True, color spots green when the callsign was logged in the current session.
+ENABLE_WORKED_COLOR = True
+
+# Callsigns logged via MLDX in the current session (in-memory only, cleared on restart).
+session_logged_calls: set = set()
+
 # If True, set Flex spot text color based on age bucket.
 ENABLE_SPOT_TEXT_COLORS = True
 
@@ -272,6 +283,7 @@ def load_settings():
     global SPOT_AGE_RED_MINUTES, SPOT_AGE_YELLOW_MINUTES, SPOT_AGE_GRAY_MINUTES
     global SPOT_COLOR_NOW, SPOT_COLOR_RED, SPOT_COLOR_YELLOW, SPOT_COLOR_GRAY
     global SPOT_BG_COLOR_NOW, SPOT_BG_COLOR_RED, SPOT_BG_COLOR_YELLOW, SPOT_BG_COLOR_GRAY
+    global SPOT_COLOR_WORKED, SPOT_BG_COLOR_WORKED, ENABLE_WORKED_COLOR
     global ENABLE_SPOT_TEXT_COLORS, ENABLE_SPOT_BACKGROUND_COLORS, ENABLE_AUTO_DUPE_THRESHOLD, FORCE_APPLESCRIPT_LOOKUP_ONLY
     if os.path.exists(SETTINGS_FILE):
         try:
@@ -327,6 +339,14 @@ def load_settings():
             ENABLE_SPOT_TEXT_COLORS = bool(data.get("ENABLE_SPOT_TEXT_COLORS", ENABLE_SPOT_TEXT_COLORS))
             ENABLE_SPOT_BACKGROUND_COLORS = bool(data.get("ENABLE_SPOT_BACKGROUND_COLORS", ENABLE_SPOT_BACKGROUND_COLORS))
 
+            SPOT_COLOR_WORKED = str(data.get("SPOT_COLOR_WORKED", DEFAULT_SPOT_COLOR_WORKED))
+            if "SPOT_BG_COLOR_WORKED" in data:
+                loaded_worked_bg = str(data.get("SPOT_BG_COLOR_WORKED", SPOT_BG_COLOR_WORKED)).strip()
+                SPOT_BG_COLOR_WORKED = loaded_worked_bg if loaded_worked_bg else "none"
+            else:
+                SPOT_BG_COLOR_WORKED = DEFAULT_SPOT_BG_COLOR_WORKED
+            ENABLE_WORKED_COLOR = bool(data.get("ENABLE_WORKED_COLOR", ENABLE_WORKED_COLOR))
+
             # Backward compatibility: migrate prior generic experimental toggle.
             if "ENABLE_AUTO_DUPE_THRESHOLD" in data:
                 ENABLE_AUTO_DUPE_THRESHOLD = bool(data.get("ENABLE_AUTO_DUPE_THRESHOLD", ENABLE_AUTO_DUPE_THRESHOLD))
@@ -371,6 +391,9 @@ def save_settings():
             "SPOT_BG_COLOR_GRAY": SPOT_BG_COLOR_GRAY,
             "ENABLE_SPOT_TEXT_COLORS": ENABLE_SPOT_TEXT_COLORS,
             "ENABLE_SPOT_BACKGROUND_COLORS": ENABLE_SPOT_BACKGROUND_COLORS,
+            "SPOT_COLOR_WORKED": SPOT_COLOR_WORKED,
+            "SPOT_BG_COLOR_WORKED": SPOT_BG_COLOR_WORKED,
+            "ENABLE_WORKED_COLOR": ENABLE_WORKED_COLOR,
             "ENABLE_AUTO_DUPE_THRESHOLD": ENABLE_AUTO_DUPE_THRESHOLD,
             "FORCE_APPLESCRIPT_LOOKUP_ONLY": FORCE_APPLESCRIPT_LOOKUP_ONLY,
         }
@@ -541,8 +564,13 @@ def update_spot_colors_task():
         with flex_spots_lock:
             for spot_id, spot in flex_spots.items():
                 spot_age_seconds = max(0, now - spot_seen_time(spot, now))
-                target_text_color = spot_color_for_age(spot_age_seconds)
-                target_background_color = spot_background_color_for_age(spot_age_seconds)
+                call_upper = (spot.get("call") or "").upper()
+                if ENABLE_WORKED_COLOR and call_upper in session_logged_calls:
+                    target_text_color = SPOT_COLOR_WORKED
+                    target_background_color = SPOT_BG_COLOR_WORKED
+                else:
+                    target_text_color = spot_color_for_age(spot_age_seconds)
+                    target_background_color = spot_background_color_for_age(spot_age_seconds)
                 if (
                     spot.get("last_text_color") != target_text_color
                     or spot.get("last_background_color") != target_background_color
@@ -586,6 +614,41 @@ def update_spot_colors_task():
                     except Exception:
                         pass
                     command_sock = None
+
+def mldx_udp_listener_task():
+    """Listen for MLDX UDP log reports and record callsigns worked this session.
+
+    MacLoggerDX broadcasts a UDP packet on port 9932 whenever a QSO is logged:
+        Log Report:Call:W1AW, RxMHz:14.025, ...
+    When received, the callsign is added to session_logged_calls and the
+    update_spot_colors_task loop will recolor any matching Flex panadapter spot
+    green on its next tick.
+
+    Requires "UDP Broadcast" enabled in MacLoggerDX Station Prefs.
+    """
+    MLDX_UDP_PORT = 9932
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind(("", MLDX_UDP_PORT))
+        print(f"MLDX UDP listener started on port {MLDX_UDP_PORT} (watching for Log Reports)")
+    except Exception as e:
+        print(f"MLDX UDP listener failed to start on port {MLDX_UDP_PORT}: {e}")
+        return
+
+    while True:
+        try:
+            data, _ = sock.recvfrom(4096)
+            msg = data.decode(errors="ignore")
+            log_debug(f"MLDX UDP: {msg.strip()}")
+            match = re.search(r"Log Report:Call:([A-Z0-9/]+)", msg, re.IGNORECASE)
+            if match:
+                call = match.group(1).upper()
+                session_logged_calls.add(call)
+                print(f"Worked: {call} — spot color will update to Worked color")
+        except Exception as e:
+            log_debug(f"MLDX UDP listener error: {e}")
+
 
 class TextRedirector:
     def __init__(self, widget):
@@ -1005,6 +1068,13 @@ class App:
         appmenu.add_command(label="Quit", command=root.quit)
         menubar.add_cascade(menu=appmenu)
 
+        helpmenu = tk.Menu(menubar, name="help")
+        helpmenu.add_command(
+            label=f"{APP_NAME} Help",
+            command=self.open_help
+        )
+        menubar.add_cascade(label="Help", menu=helpmenu)
+
         # Keyboard shortcut for Clear All Spots (Cmd-L)
         root.bind_all("<Command-l>", lambda e: clear_spots())
 
@@ -1028,6 +1098,9 @@ class App:
 
         spot_color_thread = threading.Thread(target=update_spot_colors_task, daemon=True)
         spot_color_thread.start()
+
+        mldx_udp_thread = threading.Thread(target=mldx_udp_listener_task, daemon=True)
+        mldx_udp_thread.start()
 
     def _load_about_icon_image(self, size=72):
         """Load the app icon for use in the About dialog."""
@@ -1075,6 +1148,125 @@ class App:
             pass
 
         return None
+
+    def open_help(self):
+        help_win = tk.Toplevel(self.root)
+        help_win.title(f"{APP_NAME} Help")
+        help_win.resizable(False, False)
+        help_win.transient(self.root)
+
+        outer = tk.Frame(help_win, padx=20, pady=16)
+        outer.pack(expand=True, fill=tk.BOTH)
+
+        tk.Label(
+            outer,
+            text=f"{APP_NAME}",
+            font=("Avenir Next", 18, "bold"),
+            anchor="w"
+        ).pack(fill=tk.X, pady=(0, 2))
+
+        tk.Label(
+            outer,
+            text=(
+                "Bridges Mac SmartSDR panadapter spots to MacLoggerDX.\n"
+                "Tune your VFO to any spotted frequency and the callsign is\n"
+                "automatically sent to MacLoggerDX for lookup and logging."
+            ),
+            font=("Avenir Next", 12),
+            justify=tk.LEFT,
+            anchor="w",
+            wraplength=480
+        ).pack(fill=tk.X, pady=(0, 12))
+
+        separator = tk.Frame(outer, height=1, bg="#CCCCCC")
+        separator.pack(fill=tk.X, pady=(0, 10))
+
+        tk.Label(
+            outer,
+            text="Settings Summary",
+            font=("Avenir Next", 14, "bold"),
+            anchor="w"
+        ).pack(fill=tk.X, pady=(0, 6))
+
+        settings_text = (
+            "FLEX_IP / FLEX_PORT — IP address and TCP port of your FlexRadio (default 4992).\n\n"
+            "Keep current mode — Prevents FlexSpotBridge from changing the slice mode when a spot is matched.\n\n"
+            "Duplicate handling — Choose whether to remove older spots at the same frequency, ignore newer ones "
+            "(Contest mode), or keep all spots.\n\n"
+            "Duplicate threshold — Frequency distance in Hz within which two spots are considered duplicates.\n\n"
+            "Auto-Dupe Threshold — Automatically sets the duplicate threshold to match the current Flex filter bandwidth.\n\n"
+            "Auto-clear spots — Automatically removes spots older than a set number of minutes.\n\n"
+            "Spot Age Colors — Configure text and background colors for four age buckets: Now, Red, Yellow, and Gray. "
+            "Age thresholds are configurable in minutes.\n\n"
+            "Worked — When a QSO is logged in MacLoggerDX, that callsign's panadapter spot turns the Worked color "
+            "(default green) for the rest of the session. Requires UDP Broadcast enabled in MacLoggerDX Station Prefs."
+        )
+
+        text_frame = tk.Frame(outer, bd=1, relief=tk.SUNKEN)
+        text_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 12))
+
+        scrollbar = tk.Scrollbar(text_frame)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        text_box = tk.Text(
+            text_frame,
+            wrap=tk.WORD,
+            font=("Avenir Next", 11),
+            width=58,
+            height=14,
+            relief=tk.FLAT,
+            padx=8,
+            pady=8,
+            yscrollcommand=scrollbar.set,
+            state=tk.NORMAL
+        )
+        text_box.insert(tk.END, settings_text)
+        text_box.configure(state=tk.DISABLED)
+        text_box.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.config(command=text_box.yview)
+
+        separator2 = tk.Frame(outer, height=1, bg="#CCCCCC")
+        separator2.pack(fill=tk.X, pady=(0, 8))
+
+        link_frame = tk.Frame(outer)
+        link_frame.pack(fill=tk.X)
+
+        tk.Label(
+            link_frame,
+            text="Full documentation: ",
+            font=("Avenir Next", 11)
+        ).pack(side=tk.LEFT)
+
+        github_url = "https://github.com/williamscody/FlexSpotBridge#readme"
+        link_label = tk.Label(
+            link_frame,
+            text=github_url,
+            font=("Avenir Next", 11),
+            fg="#0652DD",
+            cursor="hand2"
+        )
+        link_label.pack(side=tk.LEFT)
+        link_label.bind("<Button-1>", lambda _: webbrowser.open(github_url))
+
+        tk.Button(
+            outer,
+            text="Close",
+            command=help_win.destroy,
+            font=("Avenir Next", 12),
+            padx=16,
+            pady=4
+        ).pack(anchor="e", pady=(10, 0))
+
+        help_win.update_idletasks()
+        w = help_win.winfo_reqwidth() + 16
+        h = help_win.winfo_reqheight() + 16
+        self.root.update_idletasks()
+        rx = self.root.winfo_x() + max((self.root.winfo_width() - w) // 2, 0)
+        ry = self.root.winfo_y() + max((self.root.winfo_height() - h) // 2, 0)
+        help_win.geometry(f"{w}x{h}+{rx}+{ry}")
+
+        help_win.grab_set()
+        help_win.focus_set()
 
     def open_about(self):
         about_win = tk.Toplevel(self.root)
@@ -1365,6 +1557,9 @@ class App:
         red_bg_color_var = tk.StringVar(value=SPOT_BG_COLOR_RED)
         yellow_bg_color_var = tk.StringVar(value=SPOT_BG_COLOR_YELLOW)
         gray_bg_color_var = tk.StringVar(value=SPOT_BG_COLOR_GRAY)
+        worked_color_var = tk.StringVar(value=SPOT_COLOR_WORKED)
+        worked_bg_color_var = tk.StringVar(value=SPOT_BG_COLOR_WORKED)
+        enable_worked_color_var = tk.BooleanVar(value=ENABLE_WORKED_COLOR)
 
         red_age_var = tk.IntVar(value=SPOT_AGE_RED_MINUTES)
         yellow_age_var = tk.IntVar(value=SPOT_AGE_YELLOW_MINUTES)
@@ -1454,6 +1649,8 @@ class App:
             red_bg_color_var.set(DEFAULT_SPOT_BG_COLOR_RED)
             yellow_bg_color_var.set(DEFAULT_SPOT_BG_COLOR_YELLOW)
             gray_bg_color_var.set(DEFAULT_SPOT_BG_COLOR_GRAY)
+            worked_color_var.set(DEFAULT_SPOT_COLOR_WORKED)
+            worked_bg_color_var.set(DEFAULT_SPOT_BG_COLOR_WORKED)
 
         tk.Button(spot_age_frame, text="Default", command=set_age_defaults).grid(
             row=4, column=0, columnspan=6, pady=(10, 0)
@@ -1498,6 +1695,26 @@ class App:
             fg="#FFFFFF"
         ).grid(row=7, column=0, columnspan=6, sticky="w", pady=(8, 0))
 
+        tk.Frame(spot_age_frame, height=1, bg="#CCCCCC").grid(
+            row=8, column=0, columnspan=6, sticky="ew", pady=(10, 0)
+        )
+
+        worked_row_frame = tk.Frame(spot_age_frame)
+        worked_row_frame.grid(row=9, column=0, columnspan=6, sticky="w", pady=(6, 4))
+        tk.Label(worked_row_frame, text="Worked:").pack(side=tk.LEFT, padx=(0, 8))
+        tk.Label(worked_row_frame, text="Text").pack(side=tk.LEFT, padx=(0, 4))
+        make_swatch(worked_row_frame, worked_color_var).pack(side=tk.LEFT, padx=(0, 12))
+        tk.Label(worked_row_frame, text="Background").pack(side=tk.LEFT, padx=(0, 4))
+        make_swatch(worked_row_frame, worked_bg_color_var).pack(side=tk.LEFT, padx=(0, 4))
+        tk.Button(
+            worked_row_frame, text="None",
+            command=lambda: worked_bg_color_var.set("none"), padx=8
+        ).pack(side=tk.LEFT, padx=(0, 12))
+        tk.Checkbutton(
+            worked_row_frame, text="Enable Worked color",
+            variable=enable_worked_color_var
+        ).pack(side=tk.LEFT)
+
         row += 1
 
         def save():
@@ -1505,6 +1722,7 @@ class App:
             global SPOT_AGE_RED_MINUTES, SPOT_AGE_YELLOW_MINUTES, SPOT_AGE_GRAY_MINUTES
             global SPOT_COLOR_NOW, SPOT_COLOR_RED, SPOT_COLOR_YELLOW, SPOT_COLOR_GRAY
             global SPOT_BG_COLOR_NOW, SPOT_BG_COLOR_RED, SPOT_BG_COLOR_YELLOW, SPOT_BG_COLOR_GRAY
+            global SPOT_COLOR_WORKED, SPOT_BG_COLOR_WORKED, ENABLE_WORKED_COLOR
             global ENABLE_SPOT_TEXT_COLORS, ENABLE_SPOT_BACKGROUND_COLORS, ENABLE_AUTO_DUPE_THRESHOLD, FORCE_APPLESCRIPT_LOOKUP_ONLY
             for var_name, entry in entries.items():
                 value = entry.get()
@@ -1560,6 +1778,9 @@ class App:
             SPOT_BG_COLOR_RED = red_bg_color_var.get()
             SPOT_BG_COLOR_YELLOW = yellow_bg_color_var.get()
             SPOT_BG_COLOR_GRAY = gray_bg_color_var.get()
+            SPOT_COLOR_WORKED = worked_color_var.get()
+            SPOT_BG_COLOR_WORKED = worked_bg_color_var.get()
+            ENABLE_WORKED_COLOR = enable_worked_color_var.get()
             ENABLE_SPOT_TEXT_COLORS = enable_text_colors_var.get()
             ENABLE_SPOT_BACKGROUND_COLORS = enable_background_colors_var.get()
 
