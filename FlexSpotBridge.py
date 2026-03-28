@@ -1068,7 +1068,7 @@ class App:
         appmenu.add_command(label="Quit", command=root.quit)
         menubar.add_cascade(menu=appmenu)
 
-        helpmenu = tk.Menu(menubar, name="help")
+        helpmenu = tk.Menu(menubar)
         helpmenu.add_command(
             label=f"{APP_NAME} Help",
             command=self.open_help
@@ -1150,20 +1150,26 @@ class App:
         return None
 
     def open_help(self):
+        BG = "#FFFFFF"
+        FG = "#111111"
+
         help_win = tk.Toplevel(self.root)
         help_win.title(f"{APP_NAME} Help")
         help_win.resizable(False, False)
         help_win.transient(self.root)
+        help_win.configure(bg=BG)
 
-        outer = tk.Frame(help_win, padx=20, pady=16)
+        outer = tk.Frame(help_win, padx=20, pady=16, bg=BG)
         outer.pack(expand=True, fill=tk.BOTH)
 
         tk.Label(
             outer,
             text=f"{APP_NAME}",
-            font=("Avenir Next", 18, "bold"),
-            anchor="w"
-        ).pack(fill=tk.X, pady=(0, 2))
+            font=("Avenir Next", 24, "bold"),
+            anchor="w",
+            bg=BG,
+            fg=FG
+        ).pack(fill=tk.X, pady=(0, 4))
 
         tk.Label(
             outer,
@@ -1172,21 +1178,24 @@ class App:
                 "Tune your VFO to any spotted frequency and the callsign is\n"
                 "automatically sent to MacLoggerDX for lookup and logging."
             ),
-            font=("Avenir Next", 12),
+            font=("Avenir Next", 15),
             justify=tk.LEFT,
             anchor="w",
-            wraplength=480
-        ).pack(fill=tk.X, pady=(0, 12))
+            wraplength=540,
+            bg=BG,
+            fg=FG
+        ).pack(fill=tk.X, pady=(0, 14))
 
-        separator = tk.Frame(outer, height=1, bg="#CCCCCC")
-        separator.pack(fill=tk.X, pady=(0, 10))
+        tk.Frame(outer, height=1, bg="#CCCCCC").pack(fill=tk.X, pady=(0, 10))
 
         tk.Label(
             outer,
             text="Settings Summary",
-            font=("Avenir Next", 14, "bold"),
-            anchor="w"
-        ).pack(fill=tk.X, pady=(0, 6))
+            font=("Avenir Next", 18, "bold"),
+            anchor="w",
+            bg=BG,
+            fg=FG
+        ).pack(fill=tk.X, pady=(0, 8))
 
         settings_text = (
             "FLEX_IP / FLEX_PORT — IP address and TCP port of your FlexRadio (default 4992).\n\n"
@@ -1202,8 +1211,8 @@ class App:
             "(default green) for the rest of the session. Requires UDP Broadcast enabled in MacLoggerDX Station Prefs."
         )
 
-        text_frame = tk.Frame(outer, bd=1, relief=tk.SUNKEN)
-        text_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 12))
+        text_frame = tk.Frame(outer, bd=1, relief=tk.SUNKEN, bg=BG)
+        text_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 14))
 
         scrollbar = tk.Scrollbar(text_frame)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
@@ -1211,12 +1220,14 @@ class App:
         text_box = tk.Text(
             text_frame,
             wrap=tk.WORD,
-            font=("Avenir Next", 11),
-            width=58,
+            font=("Avenir Next", 14),
+            width=52,
             height=14,
             relief=tk.FLAT,
-            padx=8,
-            pady=8,
+            padx=10,
+            pady=10,
+            bg=BG,
+            fg=FG,
             yscrollcommand=scrollbar.set,
             state=tk.NORMAL
         )
@@ -1225,24 +1236,26 @@ class App:
         text_box.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.config(command=text_box.yview)
 
-        separator2 = tk.Frame(outer, height=1, bg="#CCCCCC")
-        separator2.pack(fill=tk.X, pady=(0, 8))
+        tk.Frame(outer, height=1, bg="#CCCCCC").pack(fill=tk.X, pady=(0, 10))
 
-        link_frame = tk.Frame(outer)
+        link_frame = tk.Frame(outer, bg=BG)
         link_frame.pack(fill=tk.X)
 
         tk.Label(
             link_frame,
             text="Full documentation: ",
-            font=("Avenir Next", 11)
+            font=("Avenir Next", 14),
+            bg=BG,
+            fg=FG
         ).pack(side=tk.LEFT)
 
         github_url = "https://github.com/williamscody/FlexSpotBridge#readme"
         link_label = tk.Label(
             link_frame,
             text=github_url,
-            font=("Avenir Next", 11),
-            fg="#0652DD",
+            font=("Avenir Next", 14, "underline"),
+            fg="#0044CC",
+            bg=BG,
             cursor="hand2"
         )
         link_label.pack(side=tk.LEFT)
@@ -1252,10 +1265,12 @@ class App:
             outer,
             text="Close",
             command=help_win.destroy,
-            font=("Avenir Next", 12),
-            padx=16,
-            pady=4
-        ).pack(anchor="e", pady=(10, 0))
+            font=("Avenir Next", 14),
+            bg="#F7F7F7",
+            fg="#111111",
+            padx=20,
+            pady=6
+        ).pack(anchor="e", pady=(12, 0))
 
         help_win.update_idletasks()
         w = help_win.winfo_reqwidth() + 16
