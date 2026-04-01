@@ -943,6 +943,24 @@ def flex_listener():
                 if REMOVE_DUPLICATE_SPOTS and not CONTEST_MODE:
                     remove_duplicate_flex_spots(spot_freq_hz, spot_id, command_sock=sock)
 
+                # Immediately apply the configured color to brand-new spots.
+                # Without this, the Flex panadapter shows the radio's own default
+                # color (magenta) for up to SPOT_COLOR_UPDATE_INTERVAL_SECONDS
+                # before the update_spot_colors_task tick fires.
+                if existing_spot is None and ENABLE_SPOT_TEXT_COLORS:
+                    initial_color = spot_color_for_age(0)
+                    cmd_seq = next_flex_command_seq()
+                    try:
+                        sock.sendall(
+                            f"C{cmd_seq}|spot set {spot_id} color={initial_color}\n".encode()
+                        )
+                        with flex_spots_lock:
+                            tracked = flex_spots.get(spot_id)
+                            if tracked is not None:
+                                tracked["last_text_color"] = initial_color
+                    except Exception as e:
+                        log_debug(f"Failed immediate color for new spot id={spot_id}: {e}")
+
             slice_event_match = re.search(r"S[^|]+\|slice\s+(\d+)\b", line)
             if slice_event_match:
                 bandwidth_hz = parse_slice_filter_bandwidth_hz(line)
