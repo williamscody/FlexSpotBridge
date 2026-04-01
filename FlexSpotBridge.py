@@ -70,7 +70,7 @@ AUTO_CLEAR_SPOTS_AGE_MINUTES = 5
 
 # Polling cadence for age-driven actions. Lower values track thresholds more closely.
 AUTO_CLEAR_CHECK_INTERVAL_SECONDS = 2
-SPOT_COLOR_UPDATE_INTERVAL_SECONDS = 1
+SPOT_COLOR_UPDATE_INTERVAL_SECONDS = 0.1
 
 # Spot age-based color thresholds and values.
 # Ages are interpreted as:
@@ -653,13 +653,25 @@ def mldx_udp_listener_task():
 class TextRedirector:
     def __init__(self, widget):
         self.widget = widget
+        self.paused = False
+        self._buffer = []
 
     def write(self, str):
-        self.widget.insert(tk.END, str)
-        self.widget.see(tk.END)
+        if self.paused:
+            self._buffer.append(str)
+        else:
+            self.widget.insert(tk.END, str)
+            self.widget.see(tk.END)
 
     def flush(self):
         pass
+
+    def resume(self):
+        self.paused = False
+        for chunk in self._buffer:
+            self.widget.insert(tk.END, chunk)
+        self._buffer.clear()
+        self.widget.see(tk.END)
 
 
 # ------------------------------------------------
@@ -943,23 +955,27 @@ def flex_listener():
                 if REMOVE_DUPLICATE_SPOTS and not CONTEST_MODE:
                     remove_duplicate_flex_spots(spot_freq_hz, spot_id, command_sock=sock)
 
-                # Immediately apply the configured color to brand-new spots.
-                # Without this, the Flex panadapter shows the radio's own default
-                # color (magenta) for up to SPOT_COLOR_UPDATE_INTERVAL_SECONDS
-                # before the update_spot_colors_task tick fires.
-                if existing_spot is None and ENABLE_SPOT_TEXT_COLORS:
-                    initial_color = spot_color_for_age(0)
-                    cmd_seq = next_flex_command_seq()
-                    try:
-                        sock.sendall(
-                            f"C{cmd_seq}|spot set {spot_id} color={initial_color}\n".encode()
-                        )
-                        with flex_spots_lock:
-                            tracked = flex_spots.get(spot_id)
-                            if tracked is not None:
-                                tracked["last_text_color"] = initial_color
-                    except Exception as e:
-                        log_debug(f"Failed immediate color for new spot id={spot_id}: {e}")
+                # Immediately apply the configured color whenever the incoming
+                # spot notification carries the wrong color (e.g. Flex/MLDX
+                # default magenta).  This covers both brand-new spots and
+                # existing spots that MLDX re-sends with color=magenta after
+                # receiving a new spotter report.
+                if ENABLE_SPOT_TEXT_COLORS:
+                    age_seconds = event_now - seen_time
+                    target_color = spot_color_for_age(age_seconds)
+                    incoming_color = fields.get("color", "")
+                    if incoming_color.lower() != target_color.lower():
+                        try:
+                            cmd_seq = next_flex_command_seq()
+                            sock.sendall(
+                                f"C{cmd_seq}|spot set {spot_id} color={target_color}\n".encode()
+                            )
+                            with flex_spots_lock:
+                                tracked = flex_spots.get(spot_id)
+                                if tracked is not None:
+                                    tracked["last_text_color"] = target_color
+                        except Exception as e:
+                            log_debug(f"Failed immediate color for spot id={spot_id}: {e}")
 
             slice_event_match = re.search(r"S[^|]+\|slice\s+(\d+)\b", line)
             if slice_event_match:
@@ -1027,6 +1043,16 @@ class App:
 
         self.text = tk.Text(root, wrap=tk.WORD)
         self.text.pack(expand=True, fill=tk.BOTH)
+
+        self._pause_btn = tk.Button(
+            root,
+            text="⏸ Pause Log",
+            command=self._toggle_log_pause,
+            anchor="w",
+            padx=8,
+            pady=2,
+        )
+        self._pause_btn.pack(side=tk.BOTTOM, fill=tk.X)
 
         def refresh_status_line():
             auto_dupe_state = "ON" if ENABLE_AUTO_DUPE_THRESHOLD else "OFF"
@@ -1300,6 +1326,17 @@ class App:
 
         help_win.grab_set()
         help_win.focus_set()
+
+    def _toggle_log_pause(self):
+        redirector = sys.stdout
+        if not isinstance(redirector, TextRedirector):
+            return
+        if redirector.paused:
+            redirector.resume()
+            self._pause_btn.config(text="⏸ Pause Log")
+        else:
+            redirector.paused = True
+            self._pause_btn.config(text="▶ Resume Log")
 
     def open_about(self):
         about_win = tk.Toplevel(self.root)

@@ -1,7 +1,7 @@
 """Shared version metadata for FlexSpotBridge."""
 
 APP_NAME = "FlexSpotBridge"
-APP_VERSION = "1.3.1"
+APP_VERSION = "1.3.3"
 APP_PRERELEASE = ""
 
 
