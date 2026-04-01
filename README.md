@@ -55,6 +55,7 @@ A ready-to-launch macOS version is available in the Releases section at: https:/
    - **Age row**: Configure Red, Yellow, and Gray age thresholds in minutes (Now remains fixed at 0 minutes).
    - **Default button**: Resets auto-clear age to 20 minutes, age thresholds to 5 / 10 / 15 minutes, text colors to the app defaults, and background colors to **None**.
    - **Update spot text color** and **Update spot background color**: Enable either feature independently or both together.
+   - **Note on "Now" color and new spots**: When MacLoggerDX sends a new spot to the Flex panadapter, it initially assigns the spot a color of magenta. FlexSpotBridge detects this and immediately sends a correction to apply your configured "Now" color. However, SmartSDR's panadapter display refreshes spot colors on its own internal cycle, so new spots may briefly appear magenta for a few seconds before the corrected color takes effect. This is a SmartSDR rendering limitation and cannot be eliminated from FlexSpotBridge. Setting your "Now" color to magenta avoids any visible flash, since no correction is needed.
 - **Worked** section (below the age color grid):
    - **Worked** color row: Choose a text color and background color for callsigns you have already logged in the current session. The default text color is green (`#00CC44`).
    - **None button** (background): Set the Worked background to **None** (no background change).
