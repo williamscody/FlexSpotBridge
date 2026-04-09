@@ -1,7 +1,7 @@
 # FlexSpotBridge
 ## Mac SmartSDR to MacLoggerDX spot bridge
 
-Current release: **1.3.3**
+Current release: **1.3.4**
 
 ## Overview
 The Windows version of SmartSDR has a feature missing from Mac SmartSDR.  When clicking on a panadapter spot in the Windows version, that spot information is sent out from the app for use by other applications.  That function is not present in Mac SmartSDR.

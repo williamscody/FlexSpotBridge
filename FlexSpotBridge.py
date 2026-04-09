@@ -857,6 +857,12 @@ def flex_listener():
                                     "Lookup echo observed for recently matched spot; keeping it "
                                     f"id={spot_id} call={recently_matched_call} freq={recently_matched_freq_hz}"
                                 )
+                                # MLDX may have reset the spot's color in Flex (e.g. to
+                                # magenta) when processing the lookup. Invalidate our
+                                # cached color so update_spot_colors_task reapplies the
+                                # correct age-based color on its next cycle.
+                                existing_lookup_spot["last_text_color"] = None
+                                existing_lookup_spot["last_background_color"] = None
                             else:
                                 flex_spots.pop(spot_id, None)
 
