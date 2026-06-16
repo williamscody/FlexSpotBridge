@@ -124,3 +124,5 @@ For every new GitHub release tag (`vX.Y.Z`):
 The release workflow now enforces version consistency between the tag, `version.py`, and README. It also uploads both of these release artifacts automatically:
 The release workflow now enforces version consistency between the tag, `version.py`, and README. It uploads this release artifact automatically:
 - `FlexSpotBridge-macOS-vX.Y.Z.zip` (full `.app` bundle)
+
+Note:  Created using VScode and Claude Code

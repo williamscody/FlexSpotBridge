@@ -135,6 +135,12 @@ flex_spots_lock = threading.Lock()
 flex_command_seq = 2
 flex_command_seq_lock = threading.Lock()
 
+# Shared listener socket — set by flex_listener() after connecting.
+# All threads send commands here to avoid opening extra connections whose
+# unread receive buffers would fill and cause Flex to close the connection.
+_listener_sock = None
+_listener_sock_write_lock = threading.Lock()
+
 
 # Callsigns recently sent to MLDX for lookup, used to distinguish synthetic
 # Lookup echo spots from genuine manually-entered MLDX spots.
@@ -151,20 +157,29 @@ def next_flex_command_seq():
         return flex_command_seq
 
 
+def _send_on_listener_sock(command):
+    """Send a command on the shared listener socket. Thread-safe. Returns True on success."""
+    seq = next_flex_command_seq()
+    with _listener_sock_write_lock:
+        if _listener_sock is None:
+            return False
+        try:
+            _listener_sock.sendall(f"C{seq}|{command}\n".encode())
+            return True
+        except Exception:
+            return False
+
+
 def send_flex_command(command):
     """Send a one-shot command to the Flex API."""
+    if _send_on_listener_sock(command):
+        return
+    # Fallback: open a transient connection (used before listener is ready).
     command_seq = next_flex_command_seq()
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.connect((FLEX_IP, FLEX_PORT))
     sock.sendall(f"C{command_seq}|{command}\n".encode())
     sock.close()
-
-
-def connect_flex_command_socket():
-    """Open a persistent command socket to the Flex API."""
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.connect((FLEX_IP, FLEX_PORT))
-    return sock
 
 
 def log_debug(*args, **kwargs):
@@ -177,7 +192,7 @@ def log_mutation_trace(message):
     print(f"MutationGuard: {message}")
 
 
-def remove_duplicate_flex_spots(freq_hz, keep_spot_id, command_sock=None):
+def remove_duplicate_flex_spots(freq_hz, keep_spot_id):
     """Remove older Flex spots within DUPLICATE_SPOT_THRESHOLD_HZ, keeping one ID."""
     now = int(time.time())
     with flex_spots_lock:
@@ -196,20 +211,15 @@ def remove_duplicate_flex_spots(freq_hz, keep_spot_id, command_sock=None):
             flex_spots.pop(spot_id, None)
 
     for spot_id in duplicate_ids:
-        try:
-            if command_sock is None:
-                send_flex_command(f"spot remove {spot_id}")
-            else:
-                command_seq = next_flex_command_seq()
-                command_sock.sendall(f"C{command_seq}|spot remove {spot_id}\n".encode())
+        if _send_on_listener_sock(f"spot remove {spot_id}"):
             print(
                 f"Removed older Flex spot id={spot_id} within {DUPLICATE_SPOT_THRESHOLD_HZ} Hz of {freq_hz} Hz"
             )
-        except Exception as e:
-            print(f"Failed to remove Flex spot id={spot_id}: {e}")
+        else:
+            print(f"Failed to remove Flex spot id={spot_id}: listener not connected")
 
 
-def remove_newer_duplicate_spot(freq_hz, new_spot_id, command_sock=None):
+def remove_newer_duplicate_spot(freq_hz, new_spot_id):
     """Remove the newly arrived spot when an older nearby spot already exists."""
     with flex_spots_lock:
         has_older_duplicate = any(
@@ -222,19 +232,14 @@ def remove_newer_duplicate_spot(freq_hz, new_spot_id, command_sock=None):
     if not has_older_duplicate:
         return False
 
-    try:
-        if command_sock is None:
-            send_flex_command(f"spot remove {new_spot_id}")
-        else:
-            command_seq = next_flex_command_seq()
-            command_sock.sendall(f"C{command_seq}|spot remove {new_spot_id}\n".encode())
+    if _send_on_listener_sock(f"spot remove {new_spot_id}"):
         print(
             f"Contest mode: ignored newer Flex spot id={new_spot_id} near {freq_hz} Hz "
             f"(threshold {DUPLICATE_SPOT_THRESHOLD_HZ} Hz)"
         )
         return True
-    except Exception as e:
-        print(f"Failed to remove newer Flex spot id={new_spot_id}: {e}")
+    else:
+        print(f"Failed to remove newer Flex spot id={new_spot_id}: listener not connected")
         return False
 
 
@@ -447,13 +452,7 @@ def parse_slice_filter_bandwidth_hz(slice_line):
         ("filter_high", "filter_low"),
         ("rx_filter_high", "rx_filter_low"),
     )
-    for high_key, low_key in edge_key_pairs:
-        high_match = re.search(rf"\b{high_key}=(-?\d+)\b", slice_line)
-        low_match = re.search(rf"\b{low_key}=(-?\d+)\b", slice_line)
-        if high_match and low_match:
-            bandwidth_hz = abs(int(high_match.group(1)) - int(low_match.group(1)))
-            if bandwidth_hz > 0:
-                return bandwidth_hz
+     
 
     return None
 
@@ -463,8 +462,6 @@ def parse_slice_filter_bandwidth_hz(slice_line):
 
 def clear_old_spots_task():
     """Periodically clear spots older than AUTO_CLEAR_SPOTS_AGE_MINUTES."""
-    command_sock = None
-    command_seq = 9000
     next_run_monotonic = time.monotonic()
 
     while True:
@@ -472,14 +469,14 @@ def clear_old_spots_task():
         if now_monotonic < next_run_monotonic:
             time.sleep(next_run_monotonic - now_monotonic)
         next_run_monotonic = time.monotonic() + AUTO_CLEAR_CHECK_INTERVAL_SECONDS
-        
+
         if not AUTO_CLEAR_SPOTS_ENABLED:
             continue
-        
+
         current_time = time.time()
         age_threshold_seconds = AUTO_CLEAR_SPOTS_AGE_MINUTES * 60
         clear_all_tracked_spots = False
-        
+
         with flex_spots_lock:
             total_spot_count = len(flex_spots)
             spots_to_remove = [
@@ -496,58 +493,18 @@ def clear_old_spots_task():
             else:
                 for spot_id in spots_to_remove:
                     flex_spots.pop(spot_id, None)
-        
+
         if spots_to_remove:
-            try:
-                if clear_all_tracked_spots:
-                    if command_sock is None:
-                        command_sock = connect_flex_command_socket()
-
-                    try:
-                        command_seq += 1
-                        command_sock.sendall(f"C{command_seq}|spot clear\n".encode())
-                    except Exception:
-                        try:
-                            command_sock.close()
-                        except Exception:
-                            pass
-
-                        command_sock = connect_flex_command_socket()
-                        command_seq += 1
-                        command_sock.sendall(f"C{command_seq}|spot clear\n".encode())
-                else:
-                    for spot_id in spots_to_remove:
-                        if command_sock is None:
-                            command_sock = connect_flex_command_socket()
-
-                        try:
-                            command_seq += 1
-                            command_sock.sendall(f"C{command_seq}|spot remove {spot_id}\n".encode())
-                        except Exception:
-                            try:
-                                command_sock.close()
-                            except Exception:
-                                pass
-
-                            command_sock = connect_flex_command_socket()
-                            command_seq += 1
-                            command_sock.sendall(f"C{command_seq}|spot remove {spot_id}\n".encode())
-
-                log_debug(f"Auto-cleared {len(spots_to_remove)} old spots")
-            except Exception as e:
-                log_debug(f"Failed to auto-clear old spots: {e}")
-                if command_sock is not None:
-                    try:
-                        command_sock.close()
-                    except Exception:
-                        pass
-                    command_sock = None
+            if clear_all_tracked_spots:
+                _send_on_listener_sock("spot clear")
+            else:
+                for spot_id in spots_to_remove:
+                    _send_on_listener_sock(f"spot remove {spot_id}")
+            log_debug(f"Auto-cleared {len(spots_to_remove)} old spots")
 
 
 def update_spot_colors_task():
     """Periodically recolor Flex spots based on configurable spot age buckets."""
-    command_sock = None
-    command_seq = 12000
     next_run_monotonic = time.monotonic()
 
     while True:
@@ -584,36 +541,21 @@ def update_spot_colors_task():
                     updates.append((spot_id, target_text_color, target_background_color))
 
         for spot_id, target_text_color, target_background_color in updates:
-            try:
-                if command_sock is None:
-                    command_sock = connect_flex_command_socket()
+            set_parts = []
+            if ENABLE_SPOT_TEXT_COLORS:
+                set_parts.append(f"color={target_text_color}")
+            if ENABLE_SPOT_BACKGROUND_COLORS:
+                if str(target_background_color).lower() == "none":
+                    set_parts.append("background_color=")
+                else:
+                    set_parts.append(f"background_color={target_background_color}")
 
-                command_seq += 1
-                set_parts = []
-                if ENABLE_SPOT_TEXT_COLORS:
-                    set_parts.append(f"color={target_text_color}")
-                if ENABLE_SPOT_BACKGROUND_COLORS:
-                    if str(target_background_color).lower() == "none":
-                        set_parts.append("background_color=")
-                    else:
-                        set_parts.append(f"background_color={target_background_color}")
+            if not set_parts:
+                continue
 
-                if not set_parts:
-                    continue
-
-                set_clause = " ".join(set_parts)
-                command_sock.sendall(
-                    f"C{command_seq}|spot set {spot_id} {set_clause}\n".encode()
-                )
-                log_debug(f"Updated spot id={spot_id} {set_clause}")
-            except Exception as e:
-                log_debug(f"Failed to update color for spot id={spot_id}: {e}")
-                if command_sock is not None:
-                    try:
-                        command_sock.close()
-                    except Exception:
-                        pass
-                    command_sock = None
+            set_clause = " ".join(set_parts)
+            _send_on_listener_sock(f"spot set {spot_id} {set_clause}")
+            log_debug(f"Updated spot id={spot_id} {set_clause}")
 
 def mldx_udp_listener_task():
     """Listen for MLDX UDP log reports and record callsigns worked this session.
@@ -761,7 +703,7 @@ def auto_mode(sock, slice_id, freq):
 # ------------------------------------------------
 
 def flex_listener():
-    global current_freq, DUPLICATE_SPOT_THRESHOLD_HZ, CURRENT_FILTER_BANDWIDTH_HZ
+    global current_freq, DUPLICATE_SPOT_THRESHOLD_HZ, CURRENT_FILTER_BANDWIDTH_HZ, _listener_sock
 
     print("Connecting to Flex radio...")
 
@@ -770,9 +712,12 @@ def flex_listener():
 
     print("Flex connected")
 
-    # subscribe to slice updates
+    # Send subscriptions before exposing the socket to other threads.
     sock.sendall(b"C1|sub slice all\n")
     sock.sendall(b"C2|sub spot all\n")
+
+    with _listener_sock_write_lock:
+        _listener_sock = sock
 
     while True:
 
@@ -869,16 +814,14 @@ def flex_listener():
                         if recently_matched:
                             continue
 
-                        try:
-                            command_seq = next_flex_command_seq()
-                            sock.sendall(f"C{command_seq}|spot remove {spot_id}\n".encode())
+                        if _send_on_listener_sock(f"spot remove {spot_id}"):
                             log_mutation_trace(
                                 "Removed synthetic MLDX Lookup spot "
                                 f"id={spot_id} call={call or 'unknown'}"
                             )
-                        except Exception as e:
+                        else:
                             log_mutation_trace(
-                                f"Failed removing synthetic MLDX Lookup spot id={spot_id}: {e}"
+                                f"Failed removing synthetic MLDX Lookup spot id={spot_id}: listener not connected"
                             )
                         continue
 
@@ -893,7 +836,7 @@ def flex_listener():
                 if CONTEST_MODE:
                     with flex_spots_lock:
                         existing_spot = flex_spots.get(spot_id)
-                    if existing_spot is None and remove_newer_duplicate_spot(spot_freq_hz, spot_id, command_sock=sock):
+                    if existing_spot is None and remove_newer_duplicate_spot(spot_freq_hz, spot_id):
                         continue
 
                 with flex_spots_lock:
@@ -959,7 +902,7 @@ def flex_listener():
                     }
 
                 if REMOVE_DUPLICATE_SPOTS and not CONTEST_MODE:
-                    remove_duplicate_flex_spots(spot_freq_hz, spot_id, command_sock=sock)
+                    remove_duplicate_flex_spots(spot_freq_hz, spot_id)
 
                 # Immediately apply the configured color whenever the incoming
                 # spot notification carries the wrong color (e.g. Flex/MLDX
@@ -971,17 +914,13 @@ def flex_listener():
                     target_color = spot_color_for_age(age_seconds)
                     incoming_color = fields.get("color", "")
                     if incoming_color.lower() != target_color.lower():
-                        try:
-                            cmd_seq = next_flex_command_seq()
-                            sock.sendall(
-                                f"C{cmd_seq}|spot set {spot_id} color={target_color}\n".encode()
-                            )
+                        if _send_on_listener_sock(f"spot set {spot_id} color={target_color}"):
                             with flex_spots_lock:
                                 tracked = flex_spots.get(spot_id)
                                 if tracked is not None:
                                     tracked["last_text_color"] = target_color
-                        except Exception as e:
-                            log_debug(f"Failed immediate color for spot id={spot_id}: {e}")
+                        else:
+                            log_debug(f"Failed immediate color for spot id={spot_id}: listener not connected")
 
             slice_event_match = re.search(r"S[^|]+\|slice\s+(\d+)\b", line)
             if slice_event_match:
