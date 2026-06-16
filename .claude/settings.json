@@ -2,7 +2,14 @@
   "permissions": {
     "allow": [
       "Bash(git log:*)",
-      "Bash(git tag:*)"
+      "Bash(git tag:*)",
+      "Bash(git -C /Users/billcody/Documents/FlexSpotBridge diff)",
+      "Bash(git -C /Users/billcody/Documents/FlexSpotBridge log --oneline -5)",
+      "Bash(git -C /Users/billcody/Documents/FlexSpotBridge add README.md version.py)",
+      "Bash(git -C /Users/billcody/Documents/FlexSpotBridge commit -m ' *)",
+      "Bash(git -C /Users/billcody/Documents/FlexSpotBridge tag v1.3.5)",
+      "Bash(git -C /Users/billcody/Documents/FlexSpotBridge push origin main)",
+      "Bash(git -C /Users/billcody/Documents/FlexSpotBridge push origin v1.3.5)"
     ]
   }
 }

@@ -86,7 +86,7 @@ A ready-to-launch macOS version is available in the Releases section at: https:/
 - Note that MacLoggerDX will be in focus momentarily when a spot populates the call field.  Focus will quickly resume to the prior app after the spot is entered into MLDX.
 
 ## Optional Build Instructions 
-1. Ensure you have Python 3.9+ and `py2app` installed:
+1. Ensure you have Python 3.12 and `py2app` installed:
    ```sh
    pip install py2app
    ```
