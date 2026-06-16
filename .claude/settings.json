@@ -9,7 +9,11 @@
       "Bash(git -C /Users/billcody/Documents/FlexSpotBridge commit -m ' *)",
       "Bash(git -C /Users/billcody/Documents/FlexSpotBridge tag v1.3.5)",
       "Bash(git -C /Users/billcody/Documents/FlexSpotBridge push origin main)",
-      "Bash(git -C /Users/billcody/Documents/FlexSpotBridge push origin v1.3.5)"
+      "Bash(git -C /Users/billcody/Documents/FlexSpotBridge push origin v1.3.5)",
+      "Bash(git -C /Users/billcody/Documents/FlexSpotBridge status)",
+      "Bash(git -C /Users/billcody/Documents/FlexSpotBridge add .github/workflows/release.yml README.md setup.py)",
+      "Bash(git -C /Users/billcody/Documents/FlexSpotBridge diff .claude/settings.json)",
+      "Bash(git -C /Users/billcody/Documents/FlexSpotBridge add .claude/settings.json)"
     ]
   }
 }
